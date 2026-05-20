@@ -1,0 +1,157 @@
+# Envoy AI Gateway — DeepSeek 上游版
+# 启动时由 entrypoint.sh 用 sed 将 __DEEPSEEK_API_KEY__ 替换为真值
+# 关联 PPT Slide 38
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: ai_gateway_listener
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8080 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ai_gateway
+                codec_type: AUTO
+                stream_idle_timeout: 0s
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          ts: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          path: "%REQ(:PATH)%"
+                          model: "%REQ(X-LLM-MODEL)%"
+                          api_key_id: "%REQ(X-API-KEY-ID)%"
+                          response_code: "%RESPONSE_CODE%"
+                          bytes_received: "%BYTES_RECEIVED%"
+                          bytes_sent: "%BYTES_SENT%"
+                          duration_ms: "%DURATION%"
+                          upstream: "%UPSTREAM_CLUSTER%"
+                          guardrail_pii: "%REQ(X-GUARDRAIL-PII)%"
+                route_config:
+                  name: ai_routes
+                  virtual_hosts:
+                    - name: ai_vhost
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/v1/chat/completions" }
+                          route:
+                            cluster: deepseek_cluster
+                            timeout: 120s
+                            host_rewrite_literal: api.deepseek.com
+                          # 剥离客户端 demo bearer, 注入真 key
+                          request_headers_to_remove: ["authorization"]
+                          request_headers_to_add:
+                            - header:
+                                key: "authorization"
+                                value: "Bearer __DEEPSEEK_API_KEY__"
+                              append_action: ADD_IF_ABSENT
+                        - match: { path: "/health" }
+                          direct_response:
+                            status: 200
+                            body:
+                              inline_string: '{"ok":true,"gateway":"envoy-ai-gateway","upstream":"deepseek"}'
+
+                http_filters:
+                  # —— 1. Demo API Key 校验 + Guardrail (Lua) —— #
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      default_source_code:
+                        inline_string: |
+                          function envoy_on_request(request_handle)
+                            local h = request_handle:headers()
+                            local path = h:get(":path") or ""
+                            if path == "/health" then return end
+
+                            local auth = h:get("authorization")
+                            if not auth or not string.find(auth, "^Bearer ") then
+                              request_handle:respond(
+                                {[":status"] = "401",
+                                 ["content-type"] = "application/json"},
+                                '{"error":"missing bearer token"}')
+                              return
+                            end
+                            h:add("x-api-key-id", "demo-tenant")
+
+                            -- Prompt Injection 拦截
+                            local body = request_handle:body()
+                            if body then
+                              local raw = body:getBytes(0, body:length())
+                              local lowered = string.lower(raw)
+                              local patterns = {
+                                "ignore previous instructions",
+                                "ignore all previous",
+                                "disregard the above",
+                                "you are now dan",
+                              }
+                              for _, p in ipairs(patterns) do
+                                if string.find(lowered, p, 1, true) then
+                                  request_handle:logWarn("prompt injection blocked: "..p)
+                                  request_handle:respond(
+                                    {[":status"] = "400",
+                                     ["content-type"] = "application/json",
+                                     ["x-guardrail"] = "prompt-injection-blocked"},
+                                    '{"error":"prompt injection detected","matched":"'..p..'"}')
+                                  return
+                                end
+                              end
+                              if string.find(raw, "%d%d%d%d%d%d%d%d%d%d%d")
+                                or string.find(raw, "[%w%.]+@[%w%.]+%.%w+") then
+                                request_handle:headers():add("x-guardrail-pii", "detected")
+                              end
+                            end
+                          end
+
+                          function envoy_on_response(response_handle)
+                            response_handle:headers():add("x-served-by", "envoy-ai-gateway")
+                          end
+
+                  # —— 2. 本地限流 —— #
+                  - name: envoy.filters.http.local_ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                      stat_prefix: ai_ratelimit
+                      token_bucket:
+                        max_tokens: 60
+                        tokens_per_fill: 60
+                        fill_interval: 60s
+                      filter_enabled:
+                        runtime_key: local_rate_limit_enabled
+                        default_value: { numerator: 100, denominator: HUNDRED }
+                      filter_enforced:
+                        runtime_key: local_rate_limit_enforced
+                        default_value: { numerator: 100, denominator: HUNDRED }
+
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: deepseek_cluster
+      connect_timeout: 10s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: deepseek_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: api.deepseek.com
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: api.deepseek.com

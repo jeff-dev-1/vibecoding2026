@@ -1,0 +1,36 @@
+# Trivy 配置 — 扫依赖漏洞 + IaC
+# https://trivy.dev
+#
+# 跑: make sbom
+#
+# 对应 PPT Slide 48 风险矩阵的"依赖污染"行
+
+format: json
+output: security/deps/reports/trivy.json
+
+severity:
+  - CRITICAL
+  - HIGH
+
+vulnerability:
+  type:
+    - os
+    - library
+
+# 扫这些 lockfile / manifest
+scan:
+  scanners:
+    - vuln
+    - secret
+    - config
+  skip-dirs:
+    - .git
+    - node_modules
+    - .next
+    - security/red-team/reports
+    - security/llm-scan/reports
+
+# 失败门槛
+exit-code: 1
+exit-on-eol: 0
+ignore-unfixed: true

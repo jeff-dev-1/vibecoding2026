@@ -1,0 +1,50 @@
+# 生产模板 — Envoy AI Gateway 的 BackendTrafficPolicy
+# Token-based rate limit + 语义缓存
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: ai-rate-limit
+spec:
+  targetRefs:
+    - name: ai-log-analysis-gw
+      group: aigateway.envoyproxy.io
+      kind: AIGatewayRoute
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        # 1. 每租户每分钟最多 10K tokens (LLM-aware)
+        - clientSelectors:
+            - headers:
+                - name: x-api-key-id
+                  type: Distinct
+          limit:
+            requests: 10000     # 这里其实是 tokens; AI Gateway 会按 LLM usage 统计
+            unit: Minute
+        # 2. 每租户每天最多 200 次请求 (硬上限,防成本爆炸)
+        - clientSelectors:
+            - headers:
+                - name: x-api-key-id
+                  type: Distinct
+          limit:
+            requests: 200
+            unit: Day
+
+---
+# 语义缓存 — 同义问题不重复调 LLM
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: ai-semantic-cache
+spec:
+  targetRefs:
+    - name: ai-log-analysis-gw
+      kind: AIGatewayRoute
+  cache:
+    enabled: true
+    similarityThreshold: 0.95     # cosine 相似度阈值
+    ttl: 1h
+    storageRef:
+      name: redis-cache
+      kind: Backend

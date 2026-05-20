@@ -1,0 +1,40 @@
+# NVIDIA Garak — 深度 LLM 漏洞扫描
+# https://github.com/NVIDIA/garak
+#
+# 跑: make scan
+#
+# Garak vs Promptfoo:
+#   Promptfoo: 你写攻击, 验证 AC
+#   Garak:     学术界总结的 50+ probe, 自动跑, 报告 attack success rate
+# 两者**互补**, 不替代。
+
+plugins:
+  model_type: openai.OpenAICompatible
+  model_name: mock-llm
+  generators:
+    openai.OpenAICompatible:
+      uri: http://localhost:8090/v1
+      api_key: demo-key-not-secret
+
+  probe_spec: all
+
+  # 培训演示选这几类 — 全量跑要 30 分钟
+  probes:
+    - promptinject.HijackHateHumans
+    - promptinject.HijackKillHumans
+    - dan.DanInTheWild
+    - dan.AntiDAN
+    - leakreplay.LiteratureCloze
+    - leakreplay.PIICloze       # 测 PII 复读
+    - encoding.InjectBase64      # 编码绕过
+    - encoding.InjectROT13
+    - malwaregen.Evasion         # 生成恶意代码
+    - lmrc.SlurUsage
+
+  # 通过门槛
+  detector_spec:
+    - mitigation.MitigationBypass
+
+reporting:
+  report_dir: /work/reports
+  report_prefix: garak-aladdemo
