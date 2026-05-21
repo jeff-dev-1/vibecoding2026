@@ -15,3 +15,6 @@ security/deps/reports/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# 自签证书 (运行时生成, 含私钥)
+infra/tls/certs/
