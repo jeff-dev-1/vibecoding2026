@@ -30,6 +30,16 @@ export function TopBar({ onOpenAssistant }: Props) {
           </div>
           <span className="text-sm text-slate-600">admin</span>
         </div>
+        <button
+          onClick={async () => {
+            await fetch("/auth/logout", { method: "POST" });
+            window.location.href = "/login";
+          }}
+          className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          title="登出"
+        >
+          登出
+        </button>
       </div>
     </header>
   );

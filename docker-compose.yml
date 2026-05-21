@@ -92,6 +92,8 @@ services:
     environment:
       # Next.js 服务端 rewrites 读取,容器内部 DNS,不依赖宿主机 IP
       INTERNAL_BACKEND_URL: http://backend:8000
+      # 登录密码 (默认 vibecoding2026, 可在 .env 覆盖)
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
     ports:
       - "3000:3000"
 

@@ -68,7 +68,6 @@ podTemplate(label: label, containers: [
             usernamePassword(credentialsId: 'harbor-registry', usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS'),
             usernamePassword(credentialsId: 'deploy-host-210', usernameVariable: 'DEPLOY_USER', passwordVariable: 'DEPLOY_PASS'),
             string(credentialsId: 'deploy-host-210-ip', variable: 'DEPLOY_HOST'),
-            string(credentialsId: 'vibe-demo-deepseek-key', variable: 'DEEPSEEK_API_KEY'),
           ]) {
             sh """
               for i in 1 2 3; do apk add --no-cache sshpass openssh-client rsync && break || sleep 5; done
@@ -77,33 +76,34 @@ podTemplate(label: label, containers: [
               sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST "mkdir -p ${DEPLOY_PATH}"
 
               # 2. 同步非镜像资产 (compose / 配置 / 脚本)
+              #    关键: --exclude='.env' — 否则 --delete 会删掉部署机上带 key 的 .env
               sshpass -p "\$DEPLOY_PASS" rsync -av --delete \\
+                --exclude='.env' \\
                 --exclude='backend/app' --exclude='backend/tests' \\
                 --exclude='frontend/src' --exclude='frontend/node_modules' --exclude='frontend/.next' \\
                 --exclude='.git' --exclude='__pycache__' --exclude='security/*/reports' \\
                 -e "ssh -o StrictHostKeyChecking=no" \\
                 ./ \$DEPLOY_USER@\$DEPLOY_HOST:${DEPLOY_PATH}/
 
-              # 3. 生成 .env (保留已有,首次写入)
+              # 3. .env: 部署机上已有 (含 DEEPSEEK/QWEN/DEMO_PASSWORD key) 则保留;
+              #    首次缺失则写占位符并提示手动填 (key 不进 CI / 代码仓)
               sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST '
                 if [ ! -f ${DEPLOY_PATH}/.env ]; then
                   cat > ${DEPLOY_PATH}/.env << "ENVEOF"
-DEEPSEEK_API_KEY=__DEEPSEEK_KEY__
+DEEPSEEK_API_KEY=PLEASE_SET
+QWEN_API_KEY=PLEASE_SET
 LLM_MODEL=deepseek-chat
+LLM_BACKEND=deepseek
 LLM_GATEWAY_API_KEY=demo-key-not-secret
+DEMO_PASSWORD=vibecoding2026
 ENVEOF
-                  echo "Created default .env (DEEPSEEK_API_KEY placeholder)"
+                  echo "WARN: created placeholder .env — 请手动填 DEEPSEEK_API_KEY/QWEN_API_KEY"
                 else
                   echo ".env exists, preserving"
                 fi
               '
 
-              # 4. 把 deepseek key 写入 (覆盖占位符)
-              sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST "
-                sed -i 's|__DEEPSEEK_KEY__|\$DEEPSEEK_API_KEY|' ${DEPLOY_PATH}/.env || true
-              "
-
-              # 5. 改 docker-compose 用 registry 镜像而不是 build
+              # 4. 改 docker-compose 用 registry 镜像而不是 build
               sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST "
                 cd ${DEPLOY_PATH}
                 docker login ${REGISTRY} -u \$REG_USER -p \$REG_PASS
