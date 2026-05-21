@@ -1,158 +1,120 @@
 # AI Log Analysis Platform · Vibe Coding Demo
 
-> 配套 PPT《Vibe Coding 与 AI Native 开发实战》Session 2 现场 Demo。
-> 这不是一个产品，是一份**可演示、可复现、可治理**的培训样本，让讲师在 3 小时课程里把 PPT Slide 22–33（6 步 Demo Flow）+ Slide 44/48（治理）+ Slide 51（业务方向）全部落到能跑的代码上。
+一个**教学用**的 AI Native 应用样例:上传 Nginx / Apache / Linux 日志 → AI 结构化总结异常 →
+自然语言查询 → 输出带证据的分析。
 
-## 一句话
+**真正的看点不是 RAG,而是它是一个完整的 "AI Harness" 样例**:业务代码不直连模型,
+所有 LLM 调用走 **Envoy AI Gateway**(双模型路由 + Guardrail + 限流 + 审计),
+输出被 **schema 锁定**,上线前有**可执行的红队报告**。
 
-上传 Nginx / 应用日志 → AI 总结异常流量 → 自然语言查询日志问题 → 输出可解释证据。
-**真正的看点不是 RAG，而是这一切都走 Envoy AI Gateway，并被 Promptfoo / Garak 红队过。**
+> 这个仓库有两种用法:**① 直接跑起来看**,或 **② 从 0 跟着 14 步用 AI 自己搭出来**(见下)。
 
-## 谁该读哪一份
+---
 
-| 角色 | 先读 | 再看 |
-|---|---|---|
-| 讲师 | [`INSTRUCTOR.md`](./INSTRUCTOR.md) + [`docs/TRAINING-BREAKDOWN.md`](./docs/TRAINING-BREAKDOWN.md)（14 步教学分解）+ [`docs/TEST-CASES.md`](./docs/TEST-CASES.md)（测试用例）+ [`docs/PPT-ALIGNMENT.md`](./docs/PPT-ALIGNMENT.md)（PPT 对齐缺口） | `WORKFLOW.md` + 现场跑 `make demo` |
-| 学员 | [`docs/STUDENT-PREP.md`](./docs/STUDENT-PREP.md)（课前准备）→ [`docs/BUILD-FROM-ZERO.md`](./docs/BUILD-FROM-ZERO.md)（**从 0 逐步实操手册**，每步可复制 Prompt + 验收 + 兜底） | 跟着 14 步把整个 demo 搭出来 |
-| 研发 | [`CLAUDE.md`](./CLAUDE.md) → [`DESIGN.md`](./DESIGN.md) | `backend/` + `gateway/envoy-ai-gateway/` |
-| 售前 / 解决方案 | [`INSTRUCTOR.md`](./INSTRUCTOR.md) Section "客户提问对照表" | `gateway/portkey/README.md`（产品对比）+ `security/` |
-| 销售 / 管理 | [`docs/PRD.md`](./docs/PRD.md) + 这页"客户价值"那段 | 跳过技术细节 |
+## 能力一览
 
-## 客户价值（销售/管理可直接用）
+- **多格式日志解析**:nginx access / apache error / linux syslog 自动识别
+- **Structured Generation**:LLM 输出走 JSON mode + Pydantic 校验 + 重试(非自由文本)
+- **Envoy AI Gateway**:DeepSeek / Qwen 双模型,按 `X-LLM-Backend` header 路由,业务代码不变
+- **Guardrail 三态**:Prompt 注入 `BLOCKED` / PII `REDACTED` / 正常 `PASS`,页面可现场测
+- **红队报告**:`make redteam` 跑攻击集 → 各类通过率 + 漏网用例,Gateway 控制面展示
+- **登录门 + 控制面 UI**:密码登录、时间柱图、日志表、AI 助手抽屉、Gateway 控制面板
 
-| 客户问 | 这个 Demo 怎么回答 |
-|---|---|
-| "AI 写代码靠谱吗？" | `make test` 看 pytest；`make redteam` 看 Promptfoo HTML 报告——**不是相信 AI，是验证 AI** |
-| "数据不外发怎么办？" | `gateway/envoy-ai-gateway/config/policy-guardrails.yaml` 做 PII 脱敏；模型上游可换本地 vLLM |
-| "成本怎么控？" | Envoy AI Gateway 的 token rate-limit + 语义缓存（`policy-rate-limit.yaml`） |
-| "上线后出问题怎么办？" | OTel Collector 把每一次 LLM 调用打到 Grafana，Slide 41 的 Observability 平面 |
-| "怎么试点？" | 这个 repo 就是试点路线的 Phase 1 → Phase 2 模板（参考 PPT Slide 46 + `INSTRUCTOR.md` 90 天计划） |
+技术栈:FastAPI · Next.js 14 · Postgres+pgvector · Envoy AI Gateway · docker-compose。
 
-## 代码与分支结构（**先看这段再动手**）
+---
 
-这个仓库有 **两条平行的代码路径**，对应两种用法。**不要混用**：
-
-| 分支 / Tag | 是什么 | 适合谁 | 用法 |
-|---|---|---|---|
-| `main` | 最终可运行交付态（92 files，1 个 commit） | 想跑通 demo 的人 | `git clone && make demo` |
-| `step-0`..`step-7` | **同一 commit 上**的 8 个 annotated tag，附讲师话术 | 讲师看话术、对照 PPT Slide | `git show step-3`（**注意：8 个 tag 指向同一棵树，`git checkout step-3` 不会回到只有骨架的状态**） |
-| `tutorial` | 真实递进 8 commit 历史，每步只含该步新增文件 | 想做"阶段差异"演示的讲师 | `git checkout tutorial && git log` |
-| `tutorial-step-0`..`tutorial-step-7` | 上面 8 个 commit 各自的 tag | 同上 | `git checkout tutorial-step-2` ← 工作树只有 13 个文件，**真**回到骨架态 |
-
-### 一句话区分
-
-- **想跑 demo** → 留在 `main`。
-- **想看话术** → `git show step-N`（看 tag annotation 即可）。
-- **想现场切到某一步实际状态** → 用 `tutorial-step-N`。
-
-### 8 步对应（PPT Slide 24 的 6+1 步）
-
-```
-step-0 : 工程契约 (CLAUDE/DESIGN/WORKFLOW/INSTRUCTOR/README)     ← 讲"工程记忆"
-step-1 : + docs/PRD.md + 验收标准                                ← Prompt 0：需求澄清
-step-2 : + 完整目录骨架 + docker-compose + infra                  ← Prompt 1：项目骨架
-step-3 : + backend + frontend + gateway                          ← Prompt 2~4：核心实现
-step-4 : + tests + CI + seed-logs                                ← Prompt 5：测试
-step-5 : + scripts/inject-bug.sh                                 ← Prompt 6：Debug
-step-6 : + .claude/hooks + .claude/agents (Review + 治理)         ← Prompt 7：Review
-step-7 : + security/* (Promptfoo+Garak+Trivy) + Jenkinsfile      ← 加分：上线前红队
-```
-
-每步的话术写在对应 `tutorial-step-N` 的 commit message 和 `step-N` 的 tag annotation 里。讲师备课直接：
+## 用法 ①:直接跑
 
 ```bash
-git log tutorial --oneline                       # 看 8 步的产出标题
-git show tutorial-step-3 --stat                  # 看 step-3 新增哪些文件
-git diff tutorial-step-3..tutorial-step-4 --stat # 看从实现到测试多了什么
-```
-
-## 现场 Demo 路径（6+1 步，对应 PPT Slide 24）
-
-## 快速开始
-
-```bash
-# 0. 准备环境（macOS / Linux，需要 Docker 24+）
+# 需要 Docker 24+ / Docker Compose v2
 cp .env.example .env
-# 编辑 .env 把 OPENAI_API_KEY 填上；不填也能跑，会走 mock-llm
+# 编辑 .env:填 DEEPSEEK_API_KEY 和/或 QWEN_API_KEY(都不填可走离线 mock,见下)
+#           DEMO_PASSWORD 默认 vibecoding2026
 
-# 1. 拉起整个 demo
-make demo
-# 等于：docker compose up -d --build
+make demo            # docker compose up -d --build,约 90 秒起齐
 
-# 2. 打开
-open http://localhost:3000        # Dashboard
-open http://localhost:8090/health # Envoy AI Gateway 健康检查
-open http://localhost:8000/docs   # FastAPI Swagger
+# 打开
+open http://localhost:3000        # Dashboard(先登录,密码 = DEMO_PASSWORD)
+open http://localhost:8000/docs   # 后端 FastAPI Swagger
+curl localhost:8090/health        # Envoy AI Gateway
 
-# 3. 喂一些日志
-make seed
-
-# 4. 跑红队
-make redteam      # Promptfoo
-make scan         # Garak
-make sbom         # Trivy + Syft
-
-# 5. 收摊
-make down
+make seed            # 喂示例日志(testdata/ 里有 nginx/apache/syslog 三份)
+make redteam         # 跑红队,结果在 Gateway 控制面"红队报告" tab
+make down            # 收摊
 ```
 
-## 目录速览（讲师手册式）
+**离线模式**(无 API key):`docker compose --profile mock up -d`,LLM 走内置 mock-llm。
 
-```
-demo/
-├── CLAUDE.md           ← L1 项目记忆     ↘
-├── DESIGN.md           ← L2 架构约束       Slide 14 Context Stack
-├── WORKFLOW.md         ← L3 阶段协议     ↗
-├── INSTRUCTOR.md       ← 讲师手册（6+1 步逐字稿 + 兜底）
-│
-├── docs/PRD.md         ← Step 1 产物：需求澄清
-├── docs/acceptance-criteria.md
-│
-├── backend/            ← Step 3 产物：FastAPI（含 services/agents/security/gateway 五层）
-├── frontend/           ← Step 3 产物：Next.js Dashboard
-│
-├── gateway/
-│   ├── envoy-ai-gateway/   ← 可跑：本地 docker-compose；也含生产 K8s CRD 模板
-│   └── portkey/            ← 对比：售前要回答的"为什么不用 SaaS"
-│
-├── infra/              ← Postgres+pgvector init.sql + OTel Collector
-│
-├── .claude/
-│   ├── hooks/          ← Slide 44 PreToolUse / PostToolUse 真实可执行
-│   └── agents/         ← Slide 42 Multi-Agent：reviewer / tester / architect
-│
-├── security/           ← Slide 48 风险矩阵的可执行版
-│   ├── red-team/       ← Promptfoo（4 类攻击：注入/越狱/PII/工具滥用）
-│   ├── llm-scan/       ← NVIDIA Garak
-│   ├── deps/           ← Trivy + Syft SBOM
-│   └── runtime/        ← 指向 .claude/hooks
-│
-├── evaluation/         ← Golden dataset，回归测试
-└── scripts/            ← Demo 兜底（inject-bug / seed / run-redteam）
-```
+**内网 HTTPS**(可选):`bash infra/tls/gen-cert.sh && docker compose --profile tls up -d nginx-tls`,
+本机 hosts 指 `vibe-coding.demo.local` 到该机即可 `https://` 访问。
 
-## 这个 demo 故意不做的
+---
 
-PPT Slide 39 强调"Demo 要能兜底"，所以**故意取舍**：
+## 用法 ②:从 0 用 AI 搭出来
 
-- ❌ 不用真模型作为默认上游（`mock-llm` 拦截所有 `/v1/messages`），讲师网络挂了照样能演
-- ❌ 不上 K8s（CRD 文件存在但不部署），docker-compose 一键起
-- ❌ 不做用户认证（Envoy AI Gateway 那一层做 API Key 鉴权就够课程演示用）
-- ❌ 不做产品级前端（Tailwind 默认样式，重点在交互流转，不在视觉）
+这才是这门课的核心 —— **不是抄代码,是组织 AI 完成交付**。跟着
+**[`docs/BUILD-FROM-ZERO.md`](./docs/BUILD-FROM-ZERO.md)** 的 14 步,把每步 Prompt 粘给
+Claude Code,让它先给计划→改文件→你跑验收。卡住了用检查点兜底。
 
-## 反面案例可演示项
+课前准备见 **[`docs/STUDENT-PREP.md`](./docs/STUDENT-PREP.md)**(装什么、要哪些 key)。
 
-PPT Slide 13 / 19 强调反面案例的价值。这个 repo 里**埋了三处**：
+---
 
-| 位置 | 反面案例 | 演示话术 |
+## 分支与检查点(git tag)
+
+| 引用 | 是什么 | 用法 |
 |---|---|---|
-| `backend/app/api/chat.py` | 故意不做输入脱敏，让 PII 直接进 LLM | "看 Promptfoo 怎么发现的" |
-| `scripts/inject-bug.sh` | 改一行让 RAG 检索失效 | "Claude Code 怎么从失败日志最小修复" |
-| `gateway/envoy-ai-gateway/config/policy-guardrails.yaml` | 给两版：宽松 vs 严格 | "客户问'为什么需要 Gateway'就 diff 这两个文件" |
+| `main` | 完整最终态 | `git clone && make demo` |
+| `tutorial` 分支 | 从 0 到 14 的连续递进历史 | `git checkout tutorial && git log` |
+| `tutorial-step-0..6` | **阶段 A**(工程契约→PRD→骨架→实现→测试→Debug→Review)每步快照 | `git checkout tutorial-step-3` |
+| `training-step-7..14` | **阶段 B/C**(Gateway→结构化→多格式→双模型→Guardrail→红队→登录→上线)每步快照 | `git checkout training-step-11` |
 
-## 进一步阅读
+`main == training-step-14`(最终态)。逐步实操时:卡住就 `git checkout <对应 step tag>` 看参考。
 
-- PPT 原文：`../docs/Vibe_Coding_AI_Native培训.pptx`
-- Envoy AI Gateway 官方：https://aigateway.envoyproxy.io/
-- Promptfoo：https://promptfoo.dev/
-- NVIDIA Garak：https://github.com/NVIDIA/garak
+> PPT 的 "Prompt N" 编号和这里的 step/tag 不是一套,换算表见 BUILD-FROM-ZERO 顶部。
+
+---
+
+## 目录速览
+
+```
+.
+├── CLAUDE.md / DESIGN.md / WORKFLOW.md   ← 工程契约(L1/L2/L3,AI 的项目记忆)
+├── backend/                              ← FastAPI:api / services / agents / security / gateway 五层
+├── frontend/                             ← Next.js 14:登录门 / Dashboard / AI 助手 / Gateway 控制面
+├── gateway/envoy-ai-gateway/             ← Envoy 配置(本地可跑 + 生产 K8s CRD 模板)+ mock-llm 上游
+├── gateway/portkey/                      ← Portkey 对比页(为什么自托管 Gateway)
+├── infra/                                ← postgres init.sql · OTel(可选) · tls(内网 HTTPS)
+├── security/                             ← 红队 run.py + 攻击集 · Garak · Trivy/SBOM
+├── .claude/                              ← hooks(运行时护栏)+ subagents(reviewer/tester/architect)
+├── evaluation/ · scripts/ · testdata/    ← golden dataset · seed/inject-bug/redteam · 样本日志
+└── docs/                                 ← 见下"文档索引"
+```
+
+---
+
+## 文档索引
+
+| 你是… | 看这些 |
+|---|---|
+| 想跑 / 想学的人 | 本 README → [`docs/STUDENT-PREP.md`](./docs/STUDENT-PREP.md) → [`docs/BUILD-FROM-ZERO.md`](./docs/BUILD-FROM-ZERO.md) |
+| 研发(读代码) | [`CLAUDE.md`](./CLAUDE.md) → [`DESIGN.md`](./DESIGN.md) → `backend/` + `gateway/` |
+| 讲师 | [`INSTRUCTOR.md`](./INSTRUCTOR.md) + [`docs/TRAINING-BREAKDOWN.md`](./docs/TRAINING-BREAKDOWN.md) + [`docs/TEST-CASES.md`](./docs/TEST-CASES.md) |
+| 想测 Guardrail / 多格式 / 红队 | [`docs/TEST-CASES.md`](./docs/TEST-CASES.md)(可复制粘贴的用例) |
+
+---
+
+## 设计取舍(故意不做的)
+
+- **默认不上 K8s**:Envoy 的生产 CRD 模板在 `gateway/.../config/`,但本地用 docker-compose 一键起。
+- **结构化输出 ≠ constrained decoding**:用的是 JSON mode + Pydantic 校验 + 重试;
+  token 级强约束需接 Outlines / dottxt(已在文档注明边界)。
+- **MCP 不是主链路**:作为工具层可插拔扩展位,不在本 demo 现场演示。
+- **公网映射是 demo/POC 级**:反向隧道 + 单入口,非生产 HA(生产需专线/VPN/Ingress/WAF)。
+
+## 参考
+
+- Envoy AI Gateway:https://aigateway.envoyproxy.io/
+- Promptfoo(红队标准工具,本仓 `security/red-team/promptfoo.yaml` 为兼容格式参考):https://promptfoo.dev/
+- NVIDIA Garak:https://github.com/NVIDIA/garak
