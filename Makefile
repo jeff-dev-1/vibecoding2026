@@ -44,7 +44,7 @@ test:
 	cd frontend && pnpm test --run 2>/dev/null || echo "frontend tests skipped (pnpm not installed)"
 
 redteam:
-	bash scripts/run-redteam.sh
+	python3 security/red-team/run.py
 
 scan:
 	docker run --rm --network=host \
