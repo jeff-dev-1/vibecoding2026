@@ -160,7 +160,8 @@ PYEOF
               for i in 1 2 3 4 5 6; do
                 BACKEND_OK=\$(curl -s -m 5 http://\$DEPLOY_HOST:${API_PORT}/health | grep -o '"ok":true' || true)
                 GATEWAY_OK=\$(curl -s -m 5 http://\$DEPLOY_HOST:${GATEWAY_PORT}/health | grep -o '"ok":true' || true)
-                FRONTEND_CODE=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://\$DEPLOY_HOST:${HTTP_PORT}/ 2>/dev/null; true)
+                # 探 /login (登录门后 / 会 307 重定向; /login 是公开页, 返回 200)
+                FRONTEND_CODE=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://\$DEPLOY_HOST:${HTTP_PORT}/login 2>/dev/null; true)
 
                 if [ -n "\$BACKEND_OK" ] && [ -n "\$GATEWAY_OK" ] && [ "\$FRONTEND_CODE" = "200" ]; then
                   echo "All healthy! backend=\$BACKEND_OK gateway=\$GATEWAY_OK frontend=\$FRONTEND_CODE"
