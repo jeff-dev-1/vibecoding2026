@@ -89,7 +89,8 @@ services:
       backend:
         condition: service_healthy
     environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8000
+      # Next.js 服务端 rewrites 读取,容器内部 DNS,不依赖宿主机 IP
+      INTERNAL_BACKEND_URL: http://backend:8000
     ports:
       - "3000:3000"
 

@@ -1,4 +1,5 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+// 浏览器走相对 /api/*, Next.js 服务端 rewrite 代理到 backend (next.config.mjs)
+const BASE = "/api";
 
 export type EvidenceItem = {
   chunk_id: string;
