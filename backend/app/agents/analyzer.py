@@ -1,9 +1,10 @@
-"""Anomaly analyzer — structured generation 版。
+"""Anomaly analyzer — structured generation, STRESSED 5 段结构。
 
-LLM 必须返回 schema-locked LogAnalysis (Pydantic 校验)。失败有兜底。
-默认走 DeepSeek; 也可强制走 Qwen (env LLM_BACKEND=qwen)。
+LLM 负责判断: summary / highest_severity / requires_immediate_attention /
+              key_observations / events (含 related_log_entries)
+后端确定性算: traffic + traffic_patterns (services/traffic.py)
 
-对应 dottxt-ai STRESSED 的核心思想: 不解析自由文本,合同约束输出。
+对应 dottxt-ai STRESSED: 合同约束输出, 不解析自由文本。
 """
 from __future__ import annotations
 
@@ -17,86 +18,95 @@ from sqlalchemy import text
 from ..config import settings
 from ..db import SessionLocal
 from ..gateway.client import GatewayError, chat_structured
-from ..schemas import LogAnalysis, TrafficStat
+from ..schemas import LogAnalysis, ParsedLogEntry, TrafficStat
 from ..services.embedding import embed
+from ..services.traffic import aggregate
 from ..services.vector_store import StoredChunk, search
 
+from pydantic import BaseModel, Field
+from typing import Literal
 
-SYSTEM_PROMPT = """You are a security log analysis engine. Return ONLY a JSON object matching:
+
+# LLM 只返回这部分 (traffic 由后端补) — 单独 schema 防止 LLM 瞎编流量数字
+Severity = Literal["critical", "high", "medium", "low", "info"]
+
+
+class _EventLLM(BaseModel):
+    event_type: str
+    severity: Severity
+    category: str
+    title: str
+    description: str
+    confidence: float
+    source_ips: list[str] = Field(default_factory=list)
+    url_pattern: str | None = None
+    possible_attacks: list[str] = Field(default_factory=list)
+    evidence_chunks: list[int] = Field(default_factory=list)
+    related_log_entries: list[str] = Field(default_factory=list)
+    affected_paths: list[str] = Field(default_factory=list)
+
+
+class _AnalysisLLM(BaseModel):
+    summary: str
+    highest_severity: Severity = "info"
+    requires_immediate_attention: bool = False
+    key_observations: list[str] = Field(default_factory=list)
+    events: list[_EventLLM] = Field(default_factory=list)
+
+
+SYSTEM_PROMPT = """You are a security log analysis engine (STRESSED-style). Return ONLY a JSON object:
 
 {
-  "summary": "1-3 sentence plain-language overview (Chinese ok)",
+  "summary": "2-4 sentence plain-language overview (Chinese ok)",
+  "highest_severity": "critical|high|medium|low|info",
+  "requires_immediate_attention": true|false,
+  "key_observations": ["short bullet", ...],   // 3-6 条
   "events": [
     {
+      "event_type": "e.g. Suspicious HTTP Method / Directory Scan / 5xx Spike",
       "severity": "critical|high|medium|low|info",
       "category": "scan|brute_force|injection_attempt|5xx_spike|4xx_anomaly|rate_anomaly|data_exfiltration|auth_failure|unknown",
-      "title": "<=120 char title",
-      "description": "why this event was flagged, <=600 chars",
-      "evidence_chunks": [<chunk_idx int>, ...],
-      "source_ips": ["x.x.x.x", ...],
-      "affected_paths": ["/some/path", ...],
-      "confidence": 0.0-1.0
+      "title": "<=120 char",
+      "description": "why flagged, <=600 chars",
+      "confidence": 0.0-1.0,
+      "source_ips": ["x.x.x.x"],
+      "url_pattern": "the URL/path pattern involved or null",
+      "possible_attacks": ["e.g. SQLi","XSS","Path Enumeration","SSRF","Unknown"],
+      "evidence_chunks": [<chunk_idx int provided below>],
+      "related_log_entries": ["<paste 1-3 actual raw log lines from the chunks>"],
+      "affected_paths": ["/some/path"]
     }
-  ],
-  "traffic": {
-    "total_requests": <int>,
-    "error_4xx": <int>,
-    "error_5xx": <int>,
-    "unique_client_ips": <int>,
-    "top_paths": ["...", ...]
-  }
+  ]
 }
 
 Rules:
 - Use ONLY data from the LOG CHUNKS below.
-- Up to 5 events. confidence >= 0.7 for events you list.
-- evidence_chunks must reference a chunk_idx provided.
-- No prose outside the JSON. No code fences.
+- key_observations: 3-6 short factual bullets (Chinese).
+- Up to 5 events, confidence >= 0.6.
+- related_log_entries MUST be verbatim lines copied from the chunks.
+- Do NOT include traffic statistics (computed separately).
+- No prose outside JSON. No code fences.
 """
 
 
 async def analyze(log_id: UUID, job_id: UUID) -> None:
     await _set_status(job_id, "running")
     try:
-        # diverse retrieval
+        # 1. 取 parsed entries 算确定性流量
+        entries = await _load_entries(job_id)
+        stat, patterns = aggregate(entries)
+
+        # 2. RAG 取 chunks 给 LLM 判断
         seeds = [
             "error 5xx anomaly spike",
-            "suspicious scanning brute force",
-            "exception traceback failure",
+            "suspicious scanning brute force enumeration",
+            "injection attempt unusual http method",
         ]
         candidates: dict[UUID, StoredChunk] = {}
         for seed in seeds:
             for c in await search(embed([seed])[0], top_k=4, log_id=log_id):
                 candidates[c.id] = c
-
         chunks = list(candidates.values())[:10]
-        if not chunks:
-            await _finish(job_id, summary="No chunks indexed.", evidence=[], analysis=None)
-            return
-
-        body = "\n---\n".join(
-            f"[chunk_idx={c.chunk_idx} lines={c.line_start}-{c.line_end}]\n{c.text}"
-            for c in chunks
-        )
-
-        try:
-            analysis, result = await chat_structured(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": "LOG CHUNKS:\n" + body},
-                ],
-                LogAnalysis,
-                backend=settings.default_backend,
-            )
-            analysis.model = result.model
-        except GatewayError as e:
-            # Schema 校验失败兜底: 用 summary 兜一份空 events
-            analysis = LogAnalysis(
-                summary=f"[Structured parse failed, raw text not stored. {e.body[:200]}]",
-                events=[],
-                traffic=TrafficStat(total_requests=len(chunks) * 10),
-                model="parse-failed",
-            )
 
         evidence = [
             {
@@ -108,12 +118,79 @@ async def analyze(log_id: UUID, job_id: UUID) -> None:
             }
             for c in chunks
         ]
+
+        if not chunks:
+            analysis = LogAnalysis(
+                summary="日志已解析,但未检索到可分析的内容块。",
+                traffic=stat,
+                traffic_patterns=patterns,
+                model="none",
+            )
+            await _finish(job_id, summary=analysis.summary, evidence=[], analysis=analysis)
+            return
+
+        body = "\n---\n".join(
+            f"[chunk_idx={c.chunk_idx} lines={c.line_start}-{c.line_end}]\n{c.text}"
+            for c in chunks
+        )
+
+        try:
+            llm, result = await chat_structured(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": "LOG CHUNKS:\n" + body},
+                ],
+                _AnalysisLLM,
+                backend=settings.default_backend,
+            )
+            # LLM 可能返回超长列表 (几百个 IP), 截断到 schema 上限
+            events = []
+            for e in llm.events:
+                d = e.model_dump()
+                d["source_ips"] = d.get("source_ips", [])[:20]
+                d["affected_paths"] = d.get("affected_paths", [])[:20]
+                d["possible_attacks"] = d.get("possible_attacks", [])[:10]
+                d["related_log_entries"] = d.get("related_log_entries", [])[:10]
+                d["key_observations"] = d.get("key_observations", [])
+                events.append(d)
+            analysis = LogAnalysis(
+                summary=llm.summary,
+                highest_severity=llm.highest_severity,
+                requires_immediate_attention=llm.requires_immediate_attention,
+                key_observations=llm.key_observations[:12],
+                events=events,  # type: ignore[arg-type]
+                traffic=stat,
+                traffic_patterns=patterns,
+                model=result.model,
+            )
+        except GatewayError as e:
+            analysis = LogAnalysis(
+                summary=f"[结构化解析失败: {e.body[:160]}]",
+                traffic=stat,
+                traffic_patterns=patterns,
+                model="parse-failed",
+            )
+
         await _finish(job_id, summary=analysis.summary, evidence=evidence, analysis=analysis)
 
     except GatewayError as e:
         await _fail(job_id, f"gateway error {e.status}: {e.body[:200]}")
     except Exception as e:
         await _fail(job_id, repr(e))
+
+
+async def _load_entries(job_id: UUID) -> list[ParsedLogEntry]:
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                text("SELECT sample_entries::text AS se FROM analysis_jobs WHERE id=:id"),
+                {"id": str(job_id)},
+            )
+        ).one_or_none()
+    if not row or not row.se:
+        return []
+    raw = json.loads(row.se)
+    return [ParsedLogEntry.model_validate(e) for e in raw]
 
 
 async def _set_status(job_id: UUID, status: str) -> None:

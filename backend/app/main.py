@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from .api import chat, logs
+from .api import chat, gateway, logs
 from .config import settings
 from .db import ping as db_ping
 from .schemas import HealthResponse
@@ -27,6 +27,7 @@ app = FastAPI(
 
 app.include_router(logs.router, prefix="/logs", tags=["logs"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(gateway.router, prefix="/gateway", tags=["gateway"])
 
 
 @app.get("/health", response_model=HealthResponse)

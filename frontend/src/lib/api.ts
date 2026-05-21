@@ -23,14 +23,18 @@ export type EventCategory =
   | "unknown";
 
 export type SecurityEvent = {
+  event_type: string;
   severity: Severity;
   category: EventCategory;
   title: string;
   description: string;
-  evidence_chunks: number[];
-  source_ips: string[];
-  affected_paths: string[];
   confidence: number;
+  source_ips: string[];
+  url_pattern?: string | null;
+  possible_attacks: string[];
+  evidence_chunks: number[];
+  related_log_entries: string[];
+  affected_paths: string[];
 };
 
 export type TrafficStat = {
@@ -41,11 +45,56 @@ export type TrafficStat = {
   top_paths: string[];
 };
 
+export type TrafficPattern = {
+  url_path: string;
+  method: string;
+  hits: number;
+  status_codes: Record<string, number>;
+};
+
 export type LogAnalysis = {
   summary: string;
+  highest_severity: Severity;
+  requires_immediate_attention: boolean;
+  key_observations: string[];
   events: SecurityEvent[];
   traffic: TrafficStat;
+  traffic_patterns: TrafficPattern[];
   model?: string | null;
+};
+
+// ===== Gateway introspection =====
+
+export type GatewayBackend = {
+  id: string;
+  label: string;
+  model: string;
+  upstream: string;
+  routing: string;
+  default: boolean;
+};
+
+export type GatewayGuardrail = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  where: string;
+  action: string;
+  patterns?: string[];
+  categories?: string[];
+};
+
+export type GatewayInfo = {
+  gateway: string;
+  default_backend: string;
+  backends: GatewayBackend[];
+  guardrails: GatewayGuardrail[];
+};
+
+export type PromptItem = { id: string; title?: string; label?: string; content: string };
+export type GatewayPrompts = {
+  system_prompts: PromptItem[];
+  scenario_prompts: PromptItem[];
 };
 
 export type ParsedLogEntry = {
@@ -132,4 +181,12 @@ export async function chat(args: {
       scenario: args.scenario,
     }),
   });
+}
+
+export async function gatewayInfo() {
+  return _fetch<GatewayInfo>("/gateway/info");
+}
+
+export async function gatewayPrompts() {
+  return _fetch<GatewayPrompts>("/gateway/prompts");
 }

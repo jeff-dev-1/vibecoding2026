@@ -6,14 +6,9 @@ from typing import Literal
 from uuid import UUID
 
 from ..gateway.client import chat
+from ..prompts import RAG_SYSTEM_PROMPT as SYSTEM_PROMPT
 from .embedding import embed
 from .vector_store import StoredChunk, search
-
-
-SYSTEM_PROMPT = """You are a log analysis assistant.
-Answer ONLY using the provided LOG CHUNKS.
-For every claim, cite the chunk_idx in square brackets like [chunk_idx=12].
-If chunks don't support an answer, say so."""
 
 
 @dataclass

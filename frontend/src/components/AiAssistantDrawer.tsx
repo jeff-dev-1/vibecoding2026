@@ -76,12 +76,19 @@ type Props = {
   open: boolean;
   onClose: () => void;
   logId?: string;
+  backend: LLMBackend;
+  onBackendChange: (b: LLMBackend) => void;
 };
 
-export function AiAssistantDrawer({ open, onClose, logId }: Props) {
+export function AiAssistantDrawer({
+  open,
+  onClose,
+  logId,
+  backend,
+  onBackendChange,
+}: Props) {
   const [question, setQuestion] = useState("");
   const [scenario, setScenario] = useState<string | null>(null);
-  const [backend, setBackend] = useState<LLMBackend>("deepseek");
   const [busy, setBusy] = useState(false);
   const [resp, setResp] = useState<ChatResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -133,7 +140,7 @@ export function AiAssistantDrawer({ open, onClose, logId }: Props) {
           <div className="flex items-center gap-2">
             <select
               value={backend}
-              onChange={(e) => setBackend(e.target.value as LLMBackend)}
+              onChange={(e) => onBackendChange(e.target.value as LLMBackend)}
               className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
               title="选择模型上游 (Gateway header 路由)"
             >

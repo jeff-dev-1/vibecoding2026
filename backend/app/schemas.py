@@ -39,15 +39,27 @@ EventCategory = Literal[
 
 
 class SecurityEvent(BaseModel):
-    """单一安全事件 — LLM 返回多个组合成 events 列表。"""
+    """单一安全事件 — 对应 STRESSED 的 Security Events 区块。"""
+    event_type: str = Field(..., max_length=120, description="如 'Suspicious HTTP Method'")
     severity: Severity
     category: EventCategory
     title: str = Field(..., max_length=120, description="一句话标题")
     description: str = Field(..., max_length=600, description="为什么判定为该事件")
-    evidence_chunks: list[int] = Field(default_factory=list, description="引用的 chunk_idx")
-    source_ips: list[str] = Field(default_factory=list, max_length=20)
-    affected_paths: list[str] = Field(default_factory=list, max_length=20)
     confidence: float = Field(..., ge=0.0, le=1.0)
+    source_ips: list[str] = Field(default_factory=list, max_length=20)
+    url_pattern: str | None = Field(default=None, max_length=300, description="涉及的 URL 模式")
+    possible_attacks: list[str] = Field(default_factory=list, max_length=10, description="如 SQLi/XSS/Scan")
+    evidence_chunks: list[int] = Field(default_factory=list, description="引用的 chunk_idx")
+    related_log_entries: list[str] = Field(default_factory=list, max_length=10, description="相关原始日志行")
+    affected_paths: list[str] = Field(default_factory=list, max_length=20)
+
+
+class TrafficPattern(BaseModel):
+    """单条流量聚合 — 对应 STRESSED Traffic Patterns 表的一行。后端确定性聚合。"""
+    url_path: str
+    method: str
+    hits: int
+    status_codes: dict[str, int] = Field(default_factory=dict, description='{"200":1,"302":1}')
 
 
 class TrafficStat(BaseModel):
@@ -59,13 +71,21 @@ class TrafficStat(BaseModel):
 
 
 class LogAnalysis(BaseModel):
-    """LLM 在 structured mode 下必须返回这个 schema。"""
+    """完整分析报告 — STRESSED 5 段结构。
+
+    LLM 负责: summary / highest_severity / requires_immediate_attention /
+              key_observations / events
+    后端确定性计算: traffic (stat) / traffic_patterns (聚合表)
+    """
     summary: str = Field(..., max_length=2000, description="人话总结, 1-3 段")
+    highest_severity: Severity = "info"
+    requires_immediate_attention: bool = False
+    key_observations: list[str] = Field(default_factory=list, max_length=12)
     events: list[SecurityEvent] = Field(default_factory=list, max_length=20)
+    # 以下由后端填 (LLM 不需返回)
     traffic: TrafficStat
+    traffic_patterns: list[TrafficPattern] = Field(default_factory=list, max_length=50)
     model: str | None = None
-    # 注: prompt 里要明确列字段, json_object mode 不绑定 schema,
-    #     但 Pydantic 入 DB 前会校验, 失败有兜底.
 
 
 # ===== 解析后的单条日志记录 (扩展 Nginx parser 后产物) =====

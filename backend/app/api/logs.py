@@ -41,7 +41,7 @@ async def upload(
     # 1. chunk + embedding (给 RAG 用)
     # 2. 逐行解析为 ParsedLogEntry (给前端表格 / 5 段链路用)
     chunks = split(text_body)
-    entries = parse_entries(text_body, source=source, limit=200)
+    entries = parse_entries(text_body, source=source, limit=1000)
     entries_json = [e.model_dump(mode="json") for e in entries]
 
     async with SessionLocal() as s:
