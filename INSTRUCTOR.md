@@ -5,6 +5,12 @@
 
 > 📋 **现场可复制粘贴的测试用例**（Guardrail/多格式/模型路由/红队）见
 > [`docs/TEST-CASES.md`](./docs/TEST-CASES.md) — 讲师照着念即可，每条标了输入和预期结果。
+>
+> 🧭 **从 0 到当前 demo 的 14 步教学分解**（含时间分配/每步话术/是否 live）见
+> [`docs/TRAINING-BREAKDOWN.md`](./docs/TRAINING-BREAKDOWN.md)。
+>
+> 🔗 **PPT 与 demo 的对齐缺口**（该补哪些 PPT 页 / 哪些调整说法 / Harness 命名层）见
+> [`docs/PPT-ALIGNMENT.md`](./docs/PPT-ALIGNMENT.md)。
 
 ---
 
