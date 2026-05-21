@@ -24,7 +24,7 @@
 ```bash
 # 1. 确保干净状态
 git status                     # 应为 clean
-git checkout main              # 或 step-0
+git checkout main              # 或 tutorial-step-0
 docker compose down -v         # 清掉旧容器和卷
 
 # 2. 一次性预热（避免现场拉镜像）
@@ -66,7 +66,7 @@ make down
 
 操作：
 ```bash
-git checkout step-0
+git checkout tutorial-step-0
 ls
 cat CLAUDE.md | head -30
 ```
@@ -99,7 +99,7 @@ cat CLAUDE.md | head -30
 - 输出有"待确认问题"——说明它知道自己不知道什么
 - 验收标准每条都"可观察"
 
-**兜底**：如果现场 AI 偏离，直接 `git checkout step-1`，把已有的 PRD 当作"AI 几秒前刚生成的"展示。
+**兜底**：如果现场 AI 偏离，直接 `git checkout tutorial-step-1`，把已有的 PRD 当作"AI 几秒前刚生成的"展示。
 
 ---
 
@@ -120,15 +120,15 @@ cat CLAUDE.md | head -30
 **看点**：
 - AI 先列树再写文件（**不是直接 cat 一堆代码**）
 - 五层目录与 PPT Slide 15 的"成熟 AI 应用项目结构"对齐
-- 同时生成 README、CLAUDE.md、docker-compose
+- 同时生成 README、docker-compose（**CLAUDE.md / DESIGN.md / WORKFLOW.md 已在 Step 0 工程契约阶段生成,这里不重复**,只让 AI 遵守其目录约定）
 
-**兜底**：`git checkout step-2`，对照 `tree -L 3` 给观众看完整骨架。
+**兜底**：`git checkout tutorial-step-2`，对照 `tree -L 3` 给观众看完整骨架。
 
 ---
 
 ### Step 3 — Prompt 2~4：核心实现（15 min，最长）
 
-这一步现场风险最大，**强烈建议预录**或用 `step-3` 跳过细节。
+这一步现场风险最大，**强烈建议预录**或用 `git checkout tutorial-step-3` 跳过细节。
 
 #### Prompt 2：Backend API（对应 PPT Slide 28）
 
@@ -320,7 +320,7 @@ make sbom           # Trivy + Syft 看依赖漏洞
 ## 不要做的事
 
 - ❌ 不要现场跑完整 `make demo` 等容器全部 ready（要 90 秒）——提前跑好
-- ❌ 不要在客户面前 debug 我这份 demo 的 bug——用 `git checkout step-N` 跳过
+- ❌ 不要在客户面前 debug 我这份 demo 的 bug——用 `git checkout tutorial-step-N`(阶段A)/`training-step-N`(阶段B/C) 跳过
 - ❌ 不要讲"Claude Code 多强"——讲"组织 AI 完成软件交付"（Slide 8）
 - ❌ 不要回避客户的安全质疑——直接打开 `security/` 目录
 - ❌ 不要承诺"取代开发者"——讲"开发者角色转变"（Slide 50 FAQ）
