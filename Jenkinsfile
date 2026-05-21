@@ -6,6 +6,8 @@ def label = "vibe-coding-demo-build-${UUID.randomUUID().toString()}"
 podTemplate(label: label, containers: [
   containerTemplate(name: 'docker', image: 'harbor.milos.local/mirrors/docker', command: 'cat', ttyEnabled: true, alwaysPullImage: false),
   containerTemplate(name: 'tools', image: 'alpine:3.18', command: 'cat', ttyEnabled: true, alwaysPullImage: false),
+], volumes: [
+  hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
 ]) {
   node(label) {
     def REGISTRY = 'harbor.milos.local'
@@ -181,6 +183,22 @@ PYEOF
               echo "✓ Backend injection block"
 
               echo "Smoke passed."
+            """
+          }
+        }
+      }
+
+      stage('Red Team') {
+        container('tools') {
+          withCredentials([
+            usernamePassword(credentialsId: 'deploy-host-210', usernameVariable: 'DEPLOY_USER', passwordVariable: 'DEPLOY_PASS'),
+            string(credentialsId: 'deploy-host-210-ip', variable: 'DEPLOY_HOST'),
+          ]) {
+            sh """
+              for i in 1 2 3; do apk add --no-cache sshpass openssh-client && break || sleep 5; done
+              # 红队 runner 跑在部署机 (能访问 backend), 结果 POST 进后端供页面展示
+              sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST \\
+                "cd ${DEPLOY_PATH} && python3 security/red-team/run.py"
             """
           }
         }

@@ -208,3 +208,31 @@ export async function guardrailTest(text: string) {
     body: JSON.stringify({ text }),
   });
 }
+
+export type RedteamCategory = {
+  category: string;
+  total: number;
+  passed: number;
+  pass_rate: number;
+};
+export type RedteamFailure = {
+  category: string;
+  payload: string;
+  expected: string;
+  actual: string;
+};
+export type RedteamReport = {
+  overall_pass_rate: number;
+  total: number;
+  passed: number;
+  categories: RedteamCategory[];
+  failures: RedteamFailure[];
+  tool: string;
+  created_at?: string | null;
+  empty?: boolean;
+  hint?: string;
+};
+
+export async function redteamReport() {
+  return _fetch<RedteamReport>("/gateway/redteam-report");
+}

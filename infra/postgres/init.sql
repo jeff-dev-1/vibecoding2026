@@ -51,3 +51,11 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS analysis_jobs_log_idx ON analysis_jobs(log_id);
 CREATE INDEX IF NOT EXISTS analysis_jobs_created_idx ON analysis_jobs(created_at DESC);
+
+-- 红队报告 (CI/离线跑完 POST 进来, 页面只读展示)
+CREATE TABLE IF NOT EXISTS redteam_reports (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  summary     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS redteam_reports_created_idx ON redteam_reports(created_at DESC);

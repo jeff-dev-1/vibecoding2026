@@ -6,10 +6,12 @@ import {
   gatewayInfo,
   gatewayPrompts,
   guardrailTest,
+  redteamReport,
   type GatewayInfo,
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
+  type RedteamReport,
 } from "@/lib/api";
 
 // AI Gateway 控制面 — 对应 PPT Slide 38:
@@ -23,11 +25,13 @@ type Props = {
 export function GatewayPanel({ backend, onBackendChange }: Props) {
   const [info, setInfo] = useState<GatewayInfo | null>(null);
   const [prompts, setPrompts] = useState<GatewayPrompts | null>(null);
-  const [tab, setTab] = useState<"routing" | "guardrail" | "prompts">("routing");
+  const [redteam, setRedteam] = useState<RedteamReport | null>(null);
+  const [tab, setTab] = useState<"routing" | "guardrail" | "prompts" | "redteam">("routing");
 
   useEffect(() => {
     gatewayInfo().then(setInfo).catch(() => {});
     gatewayPrompts().then(setPrompts).catch(() => {});
+    redteamReport().then(setRedteam).catch(() => {});
   }, []);
 
   return (
@@ -65,6 +69,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
           ["routing", "模型路由"],
           ["guardrail", "Guardrail"],
           ["prompts", "提示词管理"],
+          ["redteam", "红队报告"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -210,7 +215,102 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
             </p>
           </div>
         )}
+
+        {/* 红队报告 */}
+        {tab === "redteam" && <RedteamView report={redteam} />}
       </div>
+    </div>
+  );
+}
+
+function RedteamView({ report }: { report: RedteamReport | null }) {
+  if (!report || report.empty) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+        暂无红队报告。CI/离线运行 <code className="text-slate-600">make redteam</code> 生成。
+      </div>
+    );
+  }
+  const overall = Math.round(report.overall_pass_rate * 100);
+  const meet = overall >= 85;
+  return (
+    <div className="space-y-3">
+      {/* 总通过率 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-xs text-slate-500">总通过率</span>
+          <span className={clsx("text-xs font-medium", meet ? "text-emerald-600" : "text-amber-600")}>
+            {meet ? "✅ 达标 (≥85%)" : "⚠️ 未达标"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={clsx("h-full rounded-full", meet ? "bg-emerald-500" : "bg-amber-500")}
+              style={{ width: `${overall}%` }}
+            />
+          </div>
+          <span className="font-mono text-lg font-semibold text-slate-800">{overall}%</span>
+        </div>
+        <div className="mt-1 text-[11px] text-slate-400">
+          {report.passed}/{report.total} 通过 · {report.tool}
+          {report.created_at && ` · ${new Date(report.created_at).toLocaleString("zh-CN")}`}
+        </div>
+      </div>
+
+      {/* 按类别 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">按攻击类别</div>
+        <div className="space-y-2">
+          {report.categories.map((c) => {
+            const pct = Math.round(c.pass_rate * 100);
+            return (
+              <div key={c.category} className="flex items-center gap-2 text-xs">
+                <span className="w-16 text-slate-600">{c.category}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={clsx(
+                      "h-full rounded-full",
+                      pct >= 85 ? "bg-emerald-500" : pct >= 60 ? "bg-amber-500" : "bg-rose-500",
+                    )}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="w-20 text-right font-mono text-slate-500">
+                  {pct}% ({c.passed}/{c.total})
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 失败用例 */}
+      {report.failures.length > 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-3">
+          <div className="mb-2 text-xs font-medium text-rose-700">
+            漏网用例 ({report.failures.length}) — 需关注
+          </div>
+          <ul className="space-y-1.5">
+            {report.failures.map((f, i) => (
+              <li key={i} className="text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-rose-100 px-1 text-[10px] text-rose-700">
+                    {f.category}
+                  </span>
+                  <span className="text-slate-400">
+                    期望 {f.expected} → 实际 {f.actual}
+                  </span>
+                </div>
+                <div className="font-mono text-[11px] text-slate-600">{f.payload}</div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-slate-500">
+            漏网多为中文/编码变体 → 规则不够, 需 ML guard (Slide 48)
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,11 +8,15 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+import json
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import text
 
 from ..config import settings
+from ..db import SessionLocal
 from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
-from ..schemas import GuardrailTestRequest, GuardrailTestResponse
+from ..schemas import GuardrailTestRequest, GuardrailTestResponse, RedteamReport
 from ..security.input_guard import check
 
 router = APIRouter()
@@ -87,6 +91,37 @@ async def gateway_info() -> dict:
             },
         ],
     }
+
+
+@router.post("/redteam-report")
+async def post_redteam_report(report: RedteamReport) -> dict:
+    """红队 runner (CI/离线) 跑完把结果 POST 进来存储。"""
+    async with SessionLocal() as s:
+        await s.execute(
+            text("INSERT INTO redteam_reports (summary) VALUES (CAST(:s AS jsonb))"),
+            {"s": json.dumps(report.model_dump())},
+        )
+        await s.commit()
+    return {"ok": True}
+
+
+@router.get("/redteam-report")
+async def get_redteam_report() -> RedteamReport | dict:
+    """页面只读展示最近一次红队报告。"""
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                text(
+                    "SELECT summary::text AS s, created_at FROM redteam_reports "
+                    "ORDER BY created_at DESC LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if not row:
+        return {"empty": True, "hint": "运行 make redteam 生成报告"}
+    data = json.loads(row.s)
+    data["created_at"] = row.created_at.isoformat() if row.created_at else None
+    return RedteamReport.model_validate(data)
 
 
 @router.get("/prompts")

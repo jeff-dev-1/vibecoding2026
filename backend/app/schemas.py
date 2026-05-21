@@ -186,6 +186,32 @@ class GuardrailTestResponse(BaseModel):
     redacted_preview: str | None = None
 
 
+# ===== 红队报告 =====
+
+class RedteamCategory(BaseModel):
+    category: str
+    total: int
+    passed: int
+    pass_rate: float
+
+
+class RedteamFailure(BaseModel):
+    category: str
+    payload: str
+    expected: str
+    actual: str
+
+
+class RedteamReport(BaseModel):
+    overall_pass_rate: float
+    total: int
+    passed: int
+    categories: list[RedteamCategory] = Field(default_factory=list)
+    failures: list[RedteamFailure] = Field(default_factory=list)
+    tool: str = "promptfoo-compatible runner"
+    created_at: str | None = None
+
+
 # ===== Health =====
 
 class HealthResponse(BaseModel):
