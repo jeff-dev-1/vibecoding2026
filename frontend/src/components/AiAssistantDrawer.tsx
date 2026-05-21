@@ -101,6 +101,8 @@ export function AiAssistantDrawer({
   async function run(args: { scenarioId?: string; q?: string }) {
     const finalQ = args.q ?? question;
     if (!finalQ.trim() && !args.scenarioId) return;
+    // 自由提问 (来自输入框) 发送后清空输入框
+    const fromInput = args.q === undefined && !args.scenarioId;
     setBusy(true);
     setErr(null);
     try {
@@ -112,6 +114,7 @@ export function AiAssistantDrawer({
       });
       setResp(r);
       setScenario(args.scenarioId ?? null);
+      if (fromInput) setQuestion("");
     } catch (e: any) {
       setErr(String(e?.message || e));
     } finally {
