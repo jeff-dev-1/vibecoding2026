@@ -1,0 +1,5 @@
+{"id": "g1", "question": "过去 5 分钟有没有 5xx 飙升?", "expect_contains": ["5xx", "spike", "increase"], "context_log_id": "fixture-nginx-spike-2024-01-01"}
+{"id": "g2", "question": "可疑的扫描行为", "expect_contains": ["scan", "/admin", "rate"], "context_log_id": "fixture-nginx-scan"}
+{"id": "g3", "question": "最频繁的错误码是什么?", "expect_contains": ["502", "503", "504"], "context_log_id": "fixture-nginx-spike-2024-01-01"}
+{"id": "g4", "question": "What's the most common user agent?", "expect_contains": ["User-Agent", "Mozilla"], "context_log_id": "fixture-app-json"}
+{"id": "g5", "question": "show me login failures", "expect_contains": ["login", "fail"], "context_log_id": "fixture-app-json"}

@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ailogs
+          POSTGRES_USER: ailogs
+          POSTGRES_PASSWORD: ailogs_dev_only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ailogs"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: install
+        run: |
+          pip install -U pip
+          pip install "fastapi" "uvicorn[standard]" "pydantic" "asyncpg" \
+                      "sqlalchemy[asyncio]" "pgvector" "httpx" "python-multipart" \
+                      "sentence-transformers" \
+                      "ruff" "pytest" "pytest-asyncio"
+      - name: lint
+        run: ruff check app/
+      - name: test
+        env:
+          DATABASE_URL: postgresql+asyncpg://ailogs:ailogs_dev_only@localhost:5432/ailogs
+        run: pytest -q
+
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: enforce — no direct LLM SDK import outside gateway/
+        run: |
+          if grep -rE "^(from |import )(openai|anthropic)" backend/app --exclude-dir=gateway; then
+            echo "::error::Direct LLM SDK import found outside backend/app/gateway/"
+            exit 1
+          fi
+      - name: enforce — required memory files present
+        run: |
+          for f in CLAUDE.md DESIGN.md WORKFLOW.md docs/PRD.md; do
+            [[ -f "$f" ]] || { echo "::error::missing $f"; exit 1; }
+          done
+
+  redteam-promptfoo:
+    runs-on: ubuntu-latest
+    needs: backend
+    # 红队跑全套, 失败不挂主 CI (作为信息)
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: bring up demo
+        run: docker compose up -d --build
+      - name: wait for backend
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break
+            sleep 5
+          done
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: promptfoo
+        run: |
+          cd security/red-team
+          npx promptfoo@latest eval -c promptfoo.yaml --output reports/results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redteam-report
+          path: security/red-team/reports/
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: trivy fs
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
