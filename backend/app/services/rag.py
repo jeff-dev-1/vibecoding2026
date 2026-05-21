@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID
 
 from ..gateway.client import chat
@@ -38,11 +39,17 @@ def _compose(question: str, chunks: list[StoredChunk]) -> list[dict[str, str]]:
     ]
 
 
-async def answer(question: str, *, top_k: int, log_id: UUID | None = None) -> RagResult:
+async def answer(
+    question: str,
+    *,
+    top_k: int,
+    log_id: UUID | None = None,
+    backend: Literal["deepseek", "qwen"] = "deepseek",
+) -> RagResult:
     q_vec = embed([question])[0]
     chunks = await search(q_vec, top_k=top_k, log_id=log_id)
     if not chunks:
-        return RagResult(answer="No logs uploaded yet.", chunks=[], model="none")
+        return RagResult(answer="尚未上传日志,无法回答。请先上传一份日志。", chunks=[], model="none")
     messages = _compose(question, chunks)
-    res = await chat(messages)
+    res = await chat(messages, backend=backend)
     return RagResult(answer=res.text, chunks=chunks, model=res.model)

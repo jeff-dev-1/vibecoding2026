@@ -42,6 +42,7 @@ services:
     entrypoint: ["/entrypoint.sh"]
     environment:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
       ENVOY_LOG_LEVEL: info
     ports:
       - "8090:8080"   # AI Gateway listener (host 8090 → container 8080)
