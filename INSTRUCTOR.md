@@ -3,6 +3,9 @@
 > 这份手册不是给开发者读的，是给**讲师现场操作**用的。配合 PPT Slide 24–33 + 55（Demo Checklist）。
 > 目标：让任何拿到这个 repo 的人，3 小时课程里能把 Demo 跑下来不翻车。
 
+> 📋 **现场可复制粘贴的测试用例**（Guardrail/多格式/模型路由/红队）见
+> [`docs/TEST-CASES.md`](./docs/TEST-CASES.md) — 讲师照着念即可，每条标了输入和预期结果。
+
 ---
 
 ## 演示前 30 分钟（必做）
@@ -233,6 +236,9 @@ claude /review
 > "Review 不是看代码，是看**证据**。把这份报告打印出来就是交付物。"
 
 ---
+
+> 💡 这一步以及 Guardrail 三态演示的**逐条测试用例**在 [`docs/TEST-CASES.md`](./docs/TEST-CASES.md)，
+> 含推荐的 5 分钟 Guardrail 演示顺序（正常→注入→PII→中文越狱漏网→Gateway 层）。
 
 ### Step 7 — 加分：红队（5 min）
 
