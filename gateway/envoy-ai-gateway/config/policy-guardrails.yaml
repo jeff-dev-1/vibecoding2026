@@ -1,0 +1,91 @@
+# 生产模板 — Guardrail 策略 (ext_proc 接外部 guardrail 服务)
+# 演示版有两份: lax (宽松) 和 strict (严格)，可以现场 diff 给客户看
+#
+# 关联 PPT Slide 19 / 44 / 48
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayGuardrail
+metadata:
+  name: input-guardrail-strict
+spec:
+  targetRefs:
+    - name: ai-log-analysis-gw
+      kind: AIGatewayRoute
+  direction: Request
+  rules:
+    # 1. Prompt Injection 检测 (规则 + 可选 ML 模型)
+    - name: prompt-injection
+      type: PromptInjection
+      action: Block
+      patterns:
+        - "ignore previous instructions"
+        - "ignore all (the |)previous"
+        - "disregard the above"
+        - "you are now (DAN|Developer Mode|in jailbreak)"
+        - "system prompt:"
+        - "</?(system|admin|root)>"
+      mlModel:
+        name: protectai/deberta-v3-base-prompt-injection
+        threshold: 0.85
+    # 2. PII 脱敏 (输入侧)
+    - name: pii-redact
+      type: PII
+      action: Redact
+      categories:
+        - EMAIL
+        - PHONE_CN              # 中国手机号
+        - ID_CARD_CN            # 中国身份证
+        - BANK_CARD
+        - CREDIT_CARD
+        - IP_ADDRESS
+      placeholder: "[REDACTED_{CATEGORY}]"
+    # 3. 不允许问的话题 (合规)
+    - name: topic-filter
+      type: TopicFilter
+      action: Block
+      forbidden:
+        - "internal credentials"
+        - "production database password"
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayGuardrail
+metadata:
+  name: output-guardrail-strict
+spec:
+  targetRefs:
+    - name: ai-log-analysis-gw
+      kind: AIGatewayRoute
+  direction: Response
+  rules:
+    # 4. 输出侧二次脱敏 (防 LLM 复读 PII)
+    - name: output-pii
+      type: PII
+      action: Redact
+      categories: [EMAIL, PHONE_CN, ID_CARD_CN, BANK_CARD]
+    # 5. 输出过滤恶意代码片段
+    - name: output-malware
+      type: ContentSafety
+      action: Block
+      categories:
+        - HATE_SPEECH
+        - VIOLENT_CONTENT
+        - MALICIOUS_CODE
+---
+# —— 宽松版,给客户演示对比 ——
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayGuardrail
+metadata:
+  name: input-guardrail-lax
+  annotations:
+    demo.purpose: "对比用，**不要**在生产用这个"
+spec:
+  targetRefs:
+    - name: ai-log-analysis-gw
+      kind: AIGatewayRoute
+  direction: Request
+  rules:
+    - name: prompt-injection-warn-only
+      type: PromptInjection
+      action: Warn           # 只告警不拦截
+      patterns:
+        - "ignore previous instructions"

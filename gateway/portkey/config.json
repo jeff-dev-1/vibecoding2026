@@ -1,0 +1,75 @@
+{
+  "$schema": "https://portkey.ai/schemas/config.v2.json",
+  "_comment": "示意配置 — 不可直接用。真正的 Portkey config 通过 dashboard 或 API 注册",
+
+  "strategy": {
+    "mode": "fallback"
+  },
+
+  "targets": [
+    {
+      "name": "primary-openai",
+      "virtual_key": "openai-prod-x9k2",
+      "override_params": {
+        "model": "gpt-4o-mini",
+        "temperature": 0.2
+      },
+      "rate_limit": {
+        "tokens": 10000,
+        "unit": "minute"
+      }
+    },
+    {
+      "name": "fallback-anthropic",
+      "virtual_key": "anthropic-prod-h7c1",
+      "override_params": {
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "rate_limit": {
+        "tokens": 5000,
+        "unit": "minute"
+      }
+    }
+  ],
+
+  "cache": {
+    "mode": "semantic",
+    "max_age": 3600,
+    "similarity_threshold": 0.95
+  },
+
+  "retry": {
+    "attempts": 2,
+    "on_status_codes": [429, 500, 502, 503]
+  },
+
+  "guardrails": {
+    "before_request_hooks": [
+      {
+        "type": "PROMPT_INJECTION",
+        "deny": true,
+        "model": "protectai/deberta-v3-base-prompt-injection",
+        "threshold": 0.85
+      },
+      {
+        "type": "PII",
+        "redact": ["EMAIL", "PHONE", "CREDIT_CARD", "SSN"]
+      }
+    ],
+    "after_request_hooks": [
+      {
+        "type": "PII",
+        "redact": ["EMAIL", "PHONE", "CREDIT_CARD"]
+      },
+      {
+        "type": "CONTENT_SAFETY",
+        "deny": ["HATE", "SELF_HARM", "MALICIOUS_CODE"]
+      }
+    ]
+  },
+
+  "metadata": {
+    "_tenant": "ai-log-analysis",
+    "_env": "demo"
+  }
+}

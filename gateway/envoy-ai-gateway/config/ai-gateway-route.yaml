@@ -1,0 +1,80 @@
+# 生产部署模板 — Envoy AI Gateway 的 K8s CRD 配置
+# 来源参考: https://aigateway.envoyproxy.io/docs/concepts/architecture
+#
+# 这份文件**不会被 docker-compose 加载** — docker-compose 跑的是 envoy.yaml 的简化版。
+# 此文件是给客户/讲师展示"生产怎么做"。
+#
+# 部署:
+#   kubectl apply -f https://github.com/envoyproxy/ai-gateway/releases/latest/download/install.yaml
+#   kubectl apply -f .
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: ai-log-analysis-gw
+  namespace: default
+spec:
+  # 选择由 AI Gateway controller 接管的 Gateway
+  targetRefs:
+    - name: ai-gateway-shared
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  schema:
+    name: OpenAI            # 入口协议 (统一对外)
+  rules:
+    # 路由 1: 默认主模型
+    - matches:
+        - headers:
+            - name: x-llm-purpose
+              value: "log-analysis"
+      backendRefs:
+        - name: openai-gpt-4o-mini
+          weight: 80
+        - name: anthropic-claude-haiku
+          weight: 20         # 20% A/B 流量
+    # 路由 2: 红队评测专用流量进 mock
+    - matches:
+        - headers:
+            - name: x-llm-purpose
+              value: "redteam"
+      backendRefs:
+        - name: mock-llm
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: openai-gpt-4o-mini
+spec:
+  schema:
+    name: OpenAI
+  backendRef:
+    name: openai-upstream
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: anthropic-claude-haiku
+spec:
+  schema:
+    name: Anthropic
+  backendRef:
+    name: anthropic-upstream
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-auth
+spec:
+  targetRefs:
+    - name: openai-gpt-4o-mini
+      group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: openai-api-key      # K8s Secret
+      key: api-key

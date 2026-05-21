@@ -1,0 +1,155 @@
+# Envoy AI Gateway bootstrap (docker-compose 简化版)
+#
+# 这份配置不是直接使用 envoyproxy/ai-gateway 项目的 K8s CRD（那需要 controller）,
+# 而是用纯 Envoy + Lua/ratelimit 模拟 AI Gateway 的关键能力，让本地 docker-compose 能跑。
+#
+# 等价的 K8s CRD 配置见同目录 ai-gateway-route.yaml / ai-service-backend.yaml,
+# 那两份是给生产部署用的模板。
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: ai_gateway_listener
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8080 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ai_gateway
+                codec_type: AUTO
+                stream_idle_timeout: 0s
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          ts: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          path: "%REQ(:PATH)%"
+                          model: "%REQ(X-LLM-MODEL)%"
+                          api_key_id: "%REQ(X-API-KEY-ID)%"
+                          response_code: "%RESPONSE_CODE%"
+                          bytes_received: "%BYTES_RECEIVED%"
+                          bytes_sent: "%BYTES_SENT%"
+                          duration_ms: "%DURATION%"
+                          upstream: "%UPSTREAM_CLUSTER%"
+                route_config:
+                  name: ai_routes
+                  virtual_hosts:
+                    - name: ai_vhost
+                      domains: ["*"]
+                      routes:
+                        # AI completions — 走 guardrail Lua 之后再到 upstream
+                        - match: { prefix: "/v1/chat/completions" }
+                          route:
+                            cluster: mock_llm_cluster
+                            timeout: 120s
+                        - match: { prefix: "/v1/messages" }
+                          route:
+                            cluster: mock_llm_cluster
+                            timeout: 120s
+                        # 健康检查
+                        - match: { path: "/health" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: '{"ok":true,"gateway":"envoy-ai-gateway"}' }
+                http_filters:
+                  # —— 1. API Key 鉴权 —— #
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      default_source_code:
+                        inline_string: |
+                          function envoy_on_request(request_handle)
+                            local h = request_handle:headers()
+                            local auth = h:get("authorization")
+                            if not auth or not string.find(auth, "^Bearer ") then
+                              request_handle:respond(
+                                {[":status"] = "401",
+                                 ["content-type"] = "application/json"},
+                                '{"error":"missing bearer token"}')
+                              return
+                            end
+                            -- 简化:接受任意非空 Bearer。生产用 ext_authz 接 IAM。
+                            h:add("x-api-key-id", "demo-tenant")
+
+                            -- —— 2. PII / Prompt Injection Guardrail (输入侧) —— #
+                            local body = request_handle:body()
+                            if body then
+                              local raw = body:getBytes(0, body:length())
+                              -- prompt injection 关键词黑名单
+                              local lowered = string.lower(raw)
+                              local injection_patterns = {
+                                "ignore previous instructions",
+                                "ignore all previous",
+                                "disregard the above",
+                                "you are now dan",
+                                "system prompt:"
+                              }
+                              for _, p in ipairs(injection_patterns) do
+                                if string.find(lowered, p, 1, true) then
+                                  request_handle:logWarn("prompt injection blocked: "..p)
+                                  request_handle:respond(
+                                    {[":status"] = "400",
+                                     ["content-type"] = "application/json",
+                                     ["x-guardrail"] = "prompt-injection-blocked"},
+                                    '{"error":"prompt injection detected","matched":"'..p..'"}')
+                                  return
+                                end
+                              end
+                              -- PII 简化检测 (邮箱、手机、身份证关键模式)
+                              if string.find(raw, "%d%d%d%d%d%d%d%d%d%d%d") -- 11位+ 数字
+                                or string.find(raw, "[%w%.]+@[%w%.]+%.%w+") then
+                                request_handle:headers():add("x-guardrail-pii", "detected")
+                                request_handle:logInfo("PII detected, downstream should mask")
+                              end
+                            end
+                          end
+
+                          function envoy_on_response(response_handle)
+                            response_handle:headers():add("x-served-by", "envoy-ai-gateway")
+                          end
+
+                  # —— 3. 本地 rate-limit (token bucket per route) —— #
+                  - name: envoy.filters.http.local_ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                      stat_prefix: ai_ratelimit
+                      token_bucket:
+                        max_tokens: 60
+                        tokens_per_fill: 60
+                        fill_interval: 60s
+                      filter_enabled:
+                        runtime_key: local_rate_limit_enabled
+                        default_value: { numerator: 100, denominator: HUNDRED }
+                      filter_enforced:
+                        runtime_key: local_rate_limit_enforced
+                        default_value: { numerator: 100, denominator: HUNDRED }
+                      response_headers_to_add:
+                        - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                          header: { key: x-rate-limited, value: "true" }
+
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: mock_llm_cluster
+      connect_timeout: 5s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: mock_llm_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: mock-llm
+                      port_value: 11434

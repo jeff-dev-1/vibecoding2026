@@ -1,0 +1,34 @@
+# 生产模板 — 三个上游 LLM 后端的 Backend 资源
+# OpenAI / Anthropic / 本地 mock-llm
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: openai-upstream
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.openai.com
+        port: 443
+  tls:
+    insecureSkipVerify: false
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: anthropic-upstream
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.anthropic.com
+        port: 443
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: mock-llm
+spec:
+  endpoints:
+    - fqdn:
+        hostname: mock-llm.default.svc.cluster.local
+        port: 11434
