@@ -11,8 +11,12 @@
 - 每个 Prompt 都可**直接复制**给 Claude Code(在项目根目录的 `claude` 会话里)。
 - 每个 Prompt 都已内置一条铁律:**先给计划,我确认后再改文件,最后自己跑验收**。
 - **阶段 A(Step 0-6)**:有真实检查点 `tutorial-step-0..6`,卡住可 `git checkout`。
-- **阶段 B/C(Step 7-14)**:**没有逐步 tag**(别找)。从"阶段 A 最终态"继续增量实现,
-  **最终参考答案在 `main` 分支**——兜底就是对照 main 的对应文件。
+- **阶段 B/C(Step 7-14)**:有检查点 `training-step-7..14`,卡住可 `git checkout training-step-N`
+  看该步累积快照;最终参考答案 = `main`(== training-step-14)。
+  > 注:`training-step-N` 是**累积参考快照**(走完第 N 步后项目该有的样子),
+  > 因为后期能力是有机演进的,部分共享文件会"提前"带上后续步骤的代码(如 GatewayPanel
+  > 在 step-8 就含红队 tab,但其后端端点 step-11/12 才接上)——不影响构建,点未接通的
+  > tab 只是 fetch 失败。这是诚实的工程现实,不是 bug。
 - 三个边界提醒(B/C 反复出现,别讲错):
   1. 我们的结构化输出是 **JSON mode + Pydantic 校验 + 重试**,**不是** token-level
      constrained decoding(那要接 Outlines/dottxt strict decoding 才能那样讲)。
@@ -308,15 +312,16 @@ bash .claude/hooks/pre-tool-use-block-prod.sh <<<'{"tool_name":"Bash","tool_inpu
 ### 兜底
 - `git checkout tutorial-step-6`
 
-> ✅ **阶段 A 最终态 = `tutorial-step-6`**:一个能跑的基础 demo(此时 LLM 可走 mock)。
-> 下面阶段 B/C **从这个状态继续增量**,**没有逐步 tag**,最终参考答案在 `main`。
+> ✅ **阶段 A 最终态 = `tutorial-step-6`**:基础 demo(已含 DeepSeek 单模型网关、自由文本分析、旧版 UI)。
+> 下面阶段 B/C **从这个状态继续增量**,检查点 `training-step-7..14`(`git checkout` 可看每步累积快照),
+> 最终 = `main`(== training-step-14)。
 
 ---
 
 # 阶段 B · AI Native 进阶(从阶段 A 最终态继续;参考答案 = `main`)
 
-> 阶段 B 的每一步都是在阶段 A 基础上"加能力"。**不要找 tag**,卡住时对照 `main`
-> 分支的对应文件(下面每步"兜底"列出具体路径)。
+> 阶段 B 的每一步都是在阶段 A 基础上"加能力"。卡住时 `git checkout training-step-N`
+> 看该步累积快照,或对照 `main` 的对应文件(下面每步"兜底"列出具体路径)。
 
 ## Step 7 · 接 Envoy AI Gateway(真实 DeepSeek)
 
@@ -353,7 +358,7 @@ curl -s -X POST localhost:8090/v1/chat/completions -H "Authorization: Bearer dem
 - gateway /health 返回 ok;真实调用返回 DeepSeek 响应(model 字段是 deepseek-*)
 - **不能出现**:DEEPSEEK_API_KEY 出现在任何被 git 追踪的文件里
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `gateway/envoy-ai-gateway/config/envoy-deepseek.yaml.tmpl`、`entrypoint.sh`、`docker-compose.yml`(envoy 段)
 
 ---
@@ -395,7 +400,7 @@ curl -s "localhost:8000/logs?limit=1" | python3 -c "import sys,json;j=json.load(
 - 代码注释里写明"非 constrained decoding"的边界
 - **不能出现**:把 traffic 数字交给 LLM 编(应后端聚合)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `backend/app/schemas.py`、`gateway/client.py`、`services/traffic.py`、`agents/analyzer.py`
 
 ---
@@ -436,7 +441,7 @@ done
 - 前端表格切到 时间/级别/客户端IP/消息 列
 - **不能出现**:apache 当成 access 解析(它是 error_log)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `backend/app/services/log_parser.py`、`schemas.py`、前端 `LogTable.tsx` / `AnalysisReport.tsx`
 
 ---
@@ -476,7 +481,7 @@ curl -s -X POST localhost:8090/v1/chat/completions -H "Authorization: Bearer dem
 - 前端能切换,同问题两模型对比
 - **不能出现**:业务代码里 if/else 选模型(应由 Gateway 路由)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `envoy-deepseek.yaml.tmpl`、`entrypoint.sh`、`gateway/client.py`、`api/chat.py`、前端 `AiAssistantDrawer.tsx`
 
 ---
@@ -515,7 +520,7 @@ curl -s -X POST localhost:8000/gateway/guardrail-test -H "Content-Type: applicat
 - 中文越狱 → PASS(反面教材,引出 ML guard)
 - Gateway 直测注入返回 400(双层)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `backend/app/security/input_guard.py`、`api/chat.py`、`api/gateway.py`、`envoy-deepseek.yaml.tmpl`(Lua)、前端 `GatewayPanel.tsx`
 
 ---
@@ -551,7 +556,7 @@ curl -s localhost:8000/gateway/redteam-report | python3 -c "import sys,json;r=js
 - 越狱类通过率明显低于注入/PII(中文漏网),诚实暴露
 - **不能出现**:页面放一个"实时运行红队"按钮当主功能(红队是 CI/离线事)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `security/red-team/run.py`、`backend/app/api/gateway.py`、`infra/postgres/init.sql`、前端 `GatewayPanel.tsx`
 
 ---
@@ -593,7 +598,7 @@ curl -s -X POST localhost:3000/auth/login -H "Content-Type: application/json" -d
 - 健康检查探 /login(不是 /,因为登录门后 / 是 307)
 - **不能出现**:把密码硬编码进前端代码(应 env)
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `frontend/src/middleware.ts`、`app/login/page.tsx`、`app/auth/login/route.ts`、`docker-compose.yml`
 
 ---
@@ -632,7 +637,7 @@ curl -sk -o /dev/null -w "https /login -> %{http_code}\n" -H "Host: vibe-coding.
 - 文档写清"只暴露前端、key 在内网、非生产 HA"边界
 - **不能出现**:把 backend/gateway/数据库端口也暴露公网
 
-### 兜底(对照 main)
+### 兜底(`git checkout training-step-N`,N = 本步号;或对照 main 的下列文件)
 - `infra/tls/nginx.conf`、`infra/tls/gen-cert.sh`、`docker-compose.yml`(nginx-tls 段);公网 nginx vhost 不在仓库(在公网机)
 
 ---
@@ -642,4 +647,5 @@ curl -sk -o /dev/null -w "https /login -> %{http_code}\n" -H "Host: vibe-coding.
 走完 Step 0-14,你就从空目录搭出了:
 nginx/apache/syslog 多格式解析 → RAG + structured generation → Envoy AI Gateway
 双模型路由 → Guardrail 三态 → 红队报告 → 登录门 → 公网/内网 HTTPS,
-和 `main` 分支一致。卡在任何一步:阶段 A 用 `tutorial-step-N`,阶段 B/C 对照 `main`。
+和 `main` 分支一致。卡在任何一步:阶段 A 用 `git checkout tutorial-step-N`,
+阶段 B/C 用 `git checkout training-step-N`(N=步号),最终态 = `main` = `training-step-14`。
