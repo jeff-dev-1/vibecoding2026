@@ -27,20 +27,45 @@
 | "上线后出问题怎么办？" | OTel Collector 把每一次 LLM 调用打到 Grafana，Slide 41 的 Observability 平面 |
 | "怎么试点？" | 这个 repo 就是试点路线的 Phase 1 → Phase 2 模板（参考 PPT Slide 46 + `INSTRUCTOR.md` 90 天计划） |
 
+## 代码与分支结构（**先看这段再动手**）
+
+这个仓库有 **两条平行的代码路径**，对应两种用法。**不要混用**：
+
+| 分支 / Tag | 是什么 | 适合谁 | 用法 |
+|---|---|---|---|
+| `main` | 最终可运行交付态（92 files，1 个 commit） | 想跑通 demo 的人 | `git clone && make demo` |
+| `step-0`..`step-7` | **同一 commit 上**的 8 个 annotated tag，附讲师话术 | 讲师看话术、对照 PPT Slide | `git show step-3`（**注意：8 个 tag 指向同一棵树，`git checkout step-3` 不会回到只有骨架的状态**） |
+| `tutorial` | 真实递进 8 commit 历史，每步只含该步新增文件 | 想做"阶段差异"演示的讲师 | `git checkout tutorial && git log` |
+| `tutorial-step-0`..`tutorial-step-7` | 上面 8 个 commit 各自的 tag | 同上 | `git checkout tutorial-step-2` ← 工作树只有 13 个文件，**真**回到骨架态 |
+
+### 一句话区分
+
+- **想跑 demo** → 留在 `main`。
+- **想看话术** → `git show step-N`（看 tag annotation 即可）。
+- **想现场切到某一步实际状态** → 用 `tutorial-step-N`。
+
+### 8 步对应（PPT Slide 24 的 6+1 步）
+
+```
+step-0 : 工程契约 (CLAUDE/DESIGN/WORKFLOW/INSTRUCTOR/README)     ← 讲"工程记忆"
+step-1 : + docs/PRD.md + 验收标准                                ← Prompt 0：需求澄清
+step-2 : + 完整目录骨架 + docker-compose + infra                  ← Prompt 1：项目骨架
+step-3 : + backend + frontend + gateway                          ← Prompt 2~4：核心实现
+step-4 : + tests + CI + seed-logs                                ← Prompt 5：测试
+step-5 : + scripts/inject-bug.sh                                 ← Prompt 6：Debug
+step-6 : + .claude/hooks + .claude/agents (Review + 治理)         ← Prompt 7：Review
+step-7 : + security/* (Promptfoo+Garak+Trivy) + Jenkinsfile      ← 加分：上线前红队
+```
+
+每步的话术写在对应 `tutorial-step-N` 的 commit message 和 `step-N` 的 tag annotation 里。讲师备课直接：
+
+```bash
+git log tutorial --oneline                       # 看 8 步的产出标题
+git show tutorial-step-3 --stat                  # 看 step-3 新增哪些文件
+git diff tutorial-step-3..tutorial-step-4 --stat # 看从实现到测试多了什么
+```
+
 ## 现场 Demo 路径（6+1 步，对应 PPT Slide 24）
-
-每一步对应一个 git tag，讲师可以 `git checkout step-N` 直接跳到对应状态：
-
-```
-step-0 : 空仓 + CLAUDE.md + WORKFLOW.md     ← 讲"工程记忆"
-step-1 : + docs/PRD.md                       ← Prompt 0：需求澄清
-step-2 : + 完整目录骨架 + docker-compose     ← Prompt 1：项目骨架
-step-3 : + backend + frontend + gateway     ← Prompt 2~4：核心实现
-step-4 : + tests + CI                        ← Prompt 5：测试
-step-5 : 故意注入一个 bug 让 AI 修复          ← Prompt 6：Debug
-step-6 : + Review 报告 + Spec Compliance     ← Prompt 7：Review
-step-7 : + Promptfoo + Garak 红队报告 (加分)  ← 上线前红队
-```
 
 ## 快速开始
 
