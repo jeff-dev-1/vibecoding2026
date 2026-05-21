@@ -1,0 +1,125 @@
+name: ai-log-analysis-demo
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: alad-postgres
+    environment:
+      POSTGRES_DB: ailogs
+      POSTGRES_USER: ailogs
+      POSTGRES_PASSWORD: ailogs_dev_only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ailogs -d ailogs"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock-llm:
+    build:
+      context: ./gateway/envoy-ai-gateway/upstream-mock
+      dockerfile: Dockerfile
+    container_name: alad-mock-llm
+    profiles: ["mock"]   # 默认不启;`docker compose --profile mock up` 时启用
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:11434/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  envoy-ai-gateway:
+    image: envoyproxy/envoy:v1.32-latest
+    container_name: alad-gateway
+    volumes:
+      - ./gateway/envoy-ai-gateway/config/envoy-deepseek.yaml.tmpl:/etc/envoy/envoy-deepseek.yaml.tmpl:ro
+      - ./gateway/envoy-ai-gateway/config/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/entrypoint.sh"]
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      ENVOY_LOG_LEVEL: info
+    ports:
+      - "8090:8080"   # AI Gateway listener (host 8090 → container 8080)
+      - "9901:9901"   # Envoy admin (demo only, never in prod)
+    healthcheck:
+      # envoy distroless 没有 wget/curl, 用 bash /dev/tcp 做 TCP 探针
+      test: ["CMD", "bash", "-c", ": < /dev/tcp/localhost/9901"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: alad-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      envoy-ai-gateway:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ailogs:ailogs_dev_only@postgres:5432/ailogs
+      LLM_GATEWAY_URL: http://envoy-ai-gateway:8080
+      LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-demo-key-not-secret}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: backend
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: alad-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Next.js 服务端 rewrites 读取,容器内部 DNS,不依赖宿主机 IP
+      INTERNAL_BACKEND_URL: http://backend:8000
+      # 登录密码 (默认 vibecoding2026, 可在 .env 覆盖)
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
+    ports:
+      - "3000:3000"
+
+  nginx-tls:
+    image: nginx:1.27-alpine
+    container_name: alad-nginx-tls
+    profiles: ["tls"]   # 默认不启; `docker compose --profile tls up -d nginx-tls`
+    depends_on:
+      - frontend
+    volumes:
+      - ./infra/tls/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/tls/certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+      - "8443:80"   # http->https 跳转 (80 给 milos 留着, 用 8443)
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    container_name: alad-otel
+    profiles: ["observability"]   # 默认不启;`docker compose --profile observability up`
+    volumes:
+      - ./infra/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+volumes:
+  postgres_data:

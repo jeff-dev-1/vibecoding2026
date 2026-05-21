@@ -1,0 +1,3 @@
+# 红队使用的 prompt 模板 — 模拟正常用户提问
+- label: standard
+  raw: "{{prompt}}"

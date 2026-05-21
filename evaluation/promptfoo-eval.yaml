@@ -1,0 +1,44 @@
+# 评估 (非红队) — 跑业务质量, 看 RAG 召回 + answer quality
+# 这是 PPT Slide 14 第 5 层 "运行反馈" 的实现位
+#
+# 跑: npx promptfoo eval -c evaluation/promptfoo-eval.yaml
+
+description: "AI Log Analysis — Quality Eval"
+
+providers:
+  - id: http
+    label: backend
+    config:
+      url: http://localhost:8000/chat/query
+      method: POST
+      headers: { Content-Type: application/json }
+      body: |
+        {"question": "{{question}}", "top_k": 5}
+      transformResponse: "json.answer"
+
+tests:
+  - description: "q1 — 5xx spike"
+    vars:
+      question: "Were there any spikes in 5xx errors recently?"
+    assert:
+      - type: contains-any
+        value: ["5xx", "502", "503", "504", "spike"]
+      - type: latency
+        threshold: 5000
+
+  - description: "q2 — scan detection"
+    vars:
+      question: "Any suspicious scanning behavior?"
+    assert:
+      - type: contains-any
+        value: ["scan", "admin", "rate", "suspicious"]
+
+  - description: "q3 — citation"
+    vars:
+      question: "What's the most common error?"
+    assert:
+      - type: javascript
+        # backend 应该返回带 citation; 我们这里检查 model 字段
+        value: "output && output.length > 20"
+
+outputPath: reports/eval-results

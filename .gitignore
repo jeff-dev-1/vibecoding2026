@@ -1,0 +1,24 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.next/
+dist/
+*.log
+.DS_Store
+security/red-team/reports/
+security/llm-scan/reports/
+security/deps/reports/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 自签证书 (运行时生成, 含私钥)
+infra/tls/certs/
+
+# testdata 样本日志要入仓 (覆盖上面的 *.log)
+!testdata/
+!testdata/*.log
