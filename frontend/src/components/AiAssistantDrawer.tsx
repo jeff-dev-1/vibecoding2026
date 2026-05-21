@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { chat, type ChatResponse, type LLMBackend } from "@/lib/api";
+import { chat, type ChatResponse, type Job, type LLMBackend } from "@/lib/api";
+import { Markdown } from "./Markdown";
+import { ScenarioCharts } from "./ScenarioCharts";
 
 type Scenario = {
   id: string;
@@ -77,6 +79,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   logId?: string;
+  job?: Job | null;
   backend: LLMBackend;
   onBackendChange: (b: LLMBackend) => void;
 };
@@ -85,6 +88,7 @@ export function AiAssistantDrawer({
   open,
   onClose,
   logId,
+  job,
   backend,
   onBackendChange,
 }: Props) {
@@ -117,26 +121,20 @@ export function AiAssistantDrawer({
 
   return (
     <>
-      {/* backdrop */}
-      <div
-        className={clsx(
-          "fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-sm transition-opacity",
-          open ? "opacity-100" : "pointer-events-none opacity-0",
-        )}
-        onClick={onClose}
-      />
-
-      {/* drawer */}
+      {/* 并排面板 — 无 backdrop, 不遮挡主页 (主页自身收窄留出空间) */}
       <aside
         className={clsx(
-          "fixed right-0 top-0 z-50 flex h-screen w-[420px] flex-col bg-white shadow-2xl transition-transform",
+          "fixed right-0 top-0 z-40 flex h-screen w-[440px] flex-col border-l border-slate-200 bg-white shadow-xl transition-transform",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
-        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div>
-            <div className="text-sm text-slate-500">VS · GX-CWSK-nginx</div>
-            <h2 className="text-lg font-semibold text-slate-800">AI 助手</h2>
+        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">✨</span>
+            <div>
+              <h2 className="text-base font-semibold text-slate-800">AI 日志分析助手</h2>
+              <div className="text-[11px] text-slate-400">Nginx / Apache / syslog · 走 Envoy AI Gateway</div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -197,27 +195,36 @@ export function AiAssistantDrawer({
           </div>
 
           {resp && (
-            <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mt-5">
               {resp.blocked ? (
-                <div className="rounded bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
+                <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
                   <div className="mb-1 font-medium">⚠️ 已被 guardrail 拦截</div>
                   <div className="text-xs">{resp.block_reason}</div>
                 </div>
               ) : (
-                <>
-                  <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-                    <span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-600">
                       {resp.backend} · {resp.model}
                     </span>
                     <span>{resp.citations.length} 处引用</span>
                   </div>
-                  <pre className="whitespace-pre-wrap text-sm text-slate-700">
-                    {resp.answer}
-                  </pre>
+
+                  {/* 图表 — 从结构化数据出 (fancy) */}
+                  {job && <ScenarioCharts job={job} />}
+
+                  {/* LLM 文字结论 — markdown 渲染 */}
+                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-indigo-600">
+                      AI 结论
+                    </div>
+                    <Markdown text={resp.answer} />
+                  </div>
+
                   {resp.citations.length > 0 && (
-                    <details className="mt-3 text-xs">
+                    <details className="text-xs">
                       <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
-                        查看引用片段
+                        查看引用的原始日志片段
                       </summary>
                       <ul className="mt-2 space-y-2">
                         {resp.citations.map((c) => (
@@ -237,7 +244,7 @@ export function AiAssistantDrawer({
                       </ul>
                     </details>
                   )}
-                </>
+                </div>
               )}
             </div>
           )}
@@ -274,3 +281,5 @@ export function AiAssistantDrawer({
     </>
   );
 }
+
+// 注: 顶部用 <></> 包裹仅为保持单一返回; backdrop 已移除以实现并排不遮挡

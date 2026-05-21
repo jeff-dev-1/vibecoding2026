@@ -43,7 +43,10 @@ export default function Page() {
   const entries = job?.sample_entries ?? [];
 
   return (
-    <div className="min-h-screen">
+    <div
+      className="min-h-screen transition-[margin] duration-300"
+      style={{ marginRight: drawerOpen ? 440 : 0 }}
+    >
       <TopBar onOpenAssistant={() => setDrawerOpen(true)} />
       <UploadBar onUploaded={setJobId} currentJob={job} onRefresh={refresh} />
 
@@ -97,6 +100,7 @@ export default function Page() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         logId={job?.log_id}
+        job={job}
         backend={backend}
         onBackendChange={setBackend}
       />
