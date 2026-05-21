@@ -3,46 +3,64 @@
 把 system prompt + 场景模板放在一处, 让它们:
   - 被 chat / analyzer 复用
   - 被 GET /gateway/prompts 暴露 (前端'提示词管理'面板可见)
-  - 成为可审计的资产 (而不是散落在代码各处的字符串)
+  - 成为可审计的资产
+
+注意: 所有场景都**基于 Nginx access log 真实字段** (IP/时间/method/path/status/
+bytes/referer/UA), 不引入日志里不存在的概念(证书/VS/告警源)。
 """
 from __future__ import annotations
 
-# RAG chat 的 system prompt
+# RAG / 助手 的 system prompt — 混合上下文版 (结构化优先, RAG 补细节, 缺数据不编)
 RAG_SYSTEM_PROMPT = (
-    "You are a log analysis assistant. Answer ONLY using the provided LOG CHUNKS. "
-    "For every claim, cite the chunk_idx in square brackets like [chunk_idx=12]. "
-    "If chunks don't support an answer, say so."
+    "你是 Nginx access log 分析助手。回答必须基于下方提供的两类材料:\n"
+    "1) STRUCTURED ANALYSIS — 已聚合的权威统计(流量/状态码/TOP IP/事件), "
+    "聚合类问题(谁最多/分布/总量)必须从这里取数, 不要自己重新估算。\n"
+    "2) RAW LOG EXCERPTS — 原始日志行, 仅用于举证具体某条记录, 引用时标 [chunk_idx=N]。\n\n"
+    "硬规则:\n"
+    "- 如果两类材料都不包含某信息(例如 SSL 证书、TLS handshake、后端服务名、"
+    "应用内部错误堆栈), 直接说明 'Nginx access log 不包含该信息', 禁止编造。\n"
+    "- access log 能回答的范围: 请求量、状态码、路径、客户端 IP、UA、referer、"
+    "响应大小、扫描/枚举特征、速率异常。\n"
+    "- 简洁、用中文、给数字。"
 )
 
-# 7 个场景化 quick-action 模板 (右侧抽屉)
+# 7 个场景化 quick-action 模板 — 全部基于 nginx access log 可支撑的分析
 SCENARIO_PROMPTS: dict[str, dict[str, str]] = {
-    "vs-overview": {
-        "title": "VS 综合分析报告",
-        "prompt": "请作为 VS 综合分析师, 输出: 健康度评分(0-100)、关键指标快照、TOP3 风险点、TOP3 建议。",
+    "traffic-overview": {
+        "title": "流量概览",
+        "prompt": "请基于 access log 给出流量概览: 总请求数、状态码分布(2xx/3xx/4xx/5xx)、"
+        "TOP 5 访问路径、TOP 5 来源 IP、请求方法分布。用数字说话。",
     },
-    "health-check": {
-        "title": "全站健康巡检",
-        "prompt": "请做全站健康巡检: 流量分布、错误率、慢请求热点、可用性。每项给出 PASS/WARN/FAIL。",
-    },
-    "ssl-check": {
-        "title": "SSL 证书巡检",
-        "prompt": "请检查证书相关问题: 是否有 SSL handshake 失败、cipher 不匹配、证书近期到期信号。",
-    },
-    "alert-summary": {
-        "title": "告警总览",
-        "prompt": "请汇总告警: 按 5xx / 4xx / 速率异常 / 扫描行为 分类, 列前 5 条最严重。",
-    },
-    "slow-rca": {
-        "title": "响应慢根因分析",
-        "prompt": "请做响应慢根因分析: 哪些 URL/IP 慢, 慢在 5 段链路哪一段(客户端 RTT / LB / 服务器 RTT / 应用 / 传输)。",
-    },
-    "error-codes": {
+    "error-analysis": {
         "title": "错误码分析",
-        "prompt": "请做 4xx/5xx 错误码分析: 各状态码分布、最常见 path、可能根因。",
+        "prompt": "请做 4xx/5xx 错误码分析: 各状态码出现次数、最常报错的 path、"
+        "5xx 是否集中在某时间段或某来源 IP段, 给出可能根因。",
     },
-    "security-ops": {
-        "title": "安全运营",
-        "prompt": "请做安全运营巡查: 注入尝试、扫描行为、可疑 UA、暴力破解、异常源 IP。给出处置建议。",
+    "scan-detection": {
+        "title": "扫描与枚举检测",
+        "prompt": "请检测扫描/枚举行为: 是否有 IP 对 /admin、/wp-login、顺序 id 等做大量探测; "
+        "404 风暴; 短时间高频请求。列出涉事 IP 和被扫路径。",
+    },
+    "bigresp-analysis": {
+        "title": "大响应/异常体积",
+        "prompt": "请基于响应字节数(bytes_sent)找异常: 哪些 path 的响应体积明显偏大、"
+        "是否存在疑似批量数据导出(大 body + 顺序访问)。列出 path 和体积。",
+    },
+    "bot-ua": {
+        "title": "可疑 UA 与 Bot",
+        "prompt": "请分析 User-Agent: 哪些是搜索引擎 Bot(Googlebot/Bingbot 等)、"
+        "哪些是工具型 UA(curl/python-requests/扫描器)、是否有空 UA 或伪造 UA。"
+        "区分良性爬虫与可疑客户端。",
+    },
+    "ip-rate": {
+        "title": "异常源 IP 与速率",
+        "prompt": "请做来源 IP 与速率分析: 单 IP 请求量 TOP 榜、是否有 IP 段集中爆发、"
+        "是否存在疑似 DoS 或暴力破解的高频源。给出 IP 和频次。",
+    },
+    "url-injection": {
+        "title": "URL 注入特征",
+        "prompt": "请检查 path/query 里的注入特征: SQLi(union/select/' or)、"
+        "XSS(<script>/onerror)、路径穿越(../)、命令注入。列出可疑请求和命中特征。",
     },
 }
 

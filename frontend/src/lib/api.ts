@@ -107,11 +107,6 @@ export type ParsedLogEntry = {
   bytes_sent?: number | null;
   user_agent?: string | null;
   referer?: string | null;
-  client_rtt_ms?: number | null;
-  lb_ms?: number | null;
-  server_rtt_ms?: number | null;
-  app_ms?: number | null;
-  transfer_ms?: number | null;
 };
 
 export type Job = {
@@ -189,4 +184,19 @@ export async function gatewayInfo() {
 
 export async function gatewayPrompts() {
   return _fetch<GatewayPrompts>("/gateway/prompts");
+}
+
+export type GuardrailVerdict = "PASS" | "BLOCKED" | "REDACTED";
+export type GuardrailTestResult = {
+  verdict: GuardrailVerdict;
+  matched_rules: string[];
+  redacted_preview?: string | null;
+};
+
+export async function guardrailTest(text: string) {
+  return _fetch<GuardrailTestResult>("/gateway/guardrail-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
 }

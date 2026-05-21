@@ -12,8 +12,25 @@ from fastapi import APIRouter
 
 from ..config import settings
 from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
+from ..schemas import GuardrailTestRequest, GuardrailTestResponse
+from ..security.input_guard import check
 
 router = APIRouter()
+
+
+@router.post("/guardrail-test", response_model=GuardrailTestResponse)
+async def guardrail_test(req: GuardrailTestRequest) -> GuardrailTestResponse:
+    """现场测试 guardrail — 输入 payload, 返回 PASS/BLOCKED/REDACTED + 命中规则 + 脱敏预览。
+
+    用的是真实的 input_guard.check (跟 /chat/query 走同一逻辑), 不是模拟。
+    """
+    r = check(req.text)
+    verdict = {"pass": "PASS", "redact": "REDACTED", "block": "BLOCKED"}[r.verdict]
+    return GuardrailTestResponse(
+        verdict=verdict,  # type: ignore[arg-type]
+        matched_rules=r.reasons,
+        redacted_preview=r.cleaned_text if r.verdict == "redact" else None,
+    )
 
 
 @router.get("/info")

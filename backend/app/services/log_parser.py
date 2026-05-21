@@ -9,7 +9,6 @@ Nginx combined log:
 """
 from __future__ import annotations
 
-import random
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -75,26 +74,16 @@ def _parse_nginx_line(line: str, line_no: int) -> ParsedLogEntry | None:
     except ValueError:
         size = 0
 
-    # 5 段链路延时 — nginx 默认不打这字段;
-    # demo 里用 seed(ip+path) 生成稳定伪值, 同请求每次结果一致
-    status = int(m["status"])
-    rng = random.Random(f"{m['ip']}|{m['path']}|{status}")
-    base = 50 if status >= 500 else 5
     return ParsedLogEntry(
         line_no=line_no,
         ts=ts,
         client_ip=m["ip"],
         method=m["method"],
         path=m["path"],
-        status=status,
+        status=int(m["status"]),
         bytes_sent=size,
         user_agent=m["ua"],
         referer=m["referer"] if m["referer"] != "-" else None,
-        client_rtt_ms=rng.randint(40, 200),
-        lb_ms=rng.randint(1, 5),
-        server_rtt_ms=rng.randint(base, base + 50),
-        app_ms=rng.randint(base, base + 30),
-        transfer_ms=rng.randint(0, 10),
     )
 
 

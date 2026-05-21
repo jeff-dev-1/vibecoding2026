@@ -91,7 +91,10 @@ class LogAnalysis(BaseModel):
 # ===== 解析后的单条日志记录 (扩展 Nginx parser 后产物) =====
 
 class ParsedLogEntry(BaseModel):
-    """从原始日志行解析出来的结构化字段, 喂给前端表格。"""
+    """从原始 Nginx access log 行解析出来的真实字段。
+
+    只保留 access log 真实存在的字段 — 不伪造链路延时(nginx 默认不打 $request_time)。
+    """
     line_no: int
     ts: datetime | None = None
     client_ip: str | None = None
@@ -101,12 +104,6 @@ class ParsedLogEntry(BaseModel):
     bytes_sent: int | None = None
     user_agent: str | None = None
     referer: str | None = None
-    # 5 段链路 (没真实数据就 mock — 客户演示用)
-    client_rtt_ms: int | None = None
-    lb_ms: int | None = None
-    server_rtt_ms: int | None = None
-    app_ms: int | None = None
-    transfer_ms: int | None = None
 
 
 # ===== Evidence / Job (向后兼容) =====
@@ -160,6 +157,18 @@ class ChatResponse(BaseModel):
     backend: LLMBackend
     blocked: bool = False
     block_reason: str | None = None
+
+
+# ===== Guardrail test (现场测试用, 不改配置) =====
+
+class GuardrailTestRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
+class GuardrailTestResponse(BaseModel):
+    verdict: Literal["PASS", "BLOCKED", "REDACTED"]
+    matched_rules: list[str] = Field(default_factory=list)
+    redacted_preview: str | None = None
 
 
 # ===== Health =====

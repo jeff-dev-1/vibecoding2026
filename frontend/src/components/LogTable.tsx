@@ -3,7 +3,6 @@
 import { useState } from "react";
 import clsx from "clsx";
 import type { ParsedLogEntry } from "@/lib/api";
-import { LatencyChain } from "./LatencyChain";
 
 type Props = { entries: ParsedLogEntry[]; maxRows?: number };
 
@@ -25,45 +24,30 @@ function statusColor(s?: number | null) {
 }
 
 function fmtBytes(n?: number | null) {
-  if (!n) return "—";
+  if (n == null) return "—";
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function fmtDuration(e: ParsedLogEntry) {
-  const total =
-    (e.client_rtt_ms ?? 0) +
-    (e.lb_ms ?? 0) +
-    (e.server_rtt_ms ?? 0) +
-    (e.app_ms ?? 0) +
-    (e.transfer_ms ?? 0);
-  return total;
 }
 
 export function LogTable({ entries, maxRows = 30 }: Props) {
   const [open, setOpen] = useState<Set<number>>(new Set());
   const rows = entries.slice(0, maxRows);
 
-  const toggle = (i: number) => {
+  const toggle = (i: number) =>
     setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
+      next.has(i) ? next.delete(i) : next.add(i);
       return next;
     });
-  };
 
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
-        暂无日志条目。请先上传日志。
+        暂无日志条目。请先上传 Nginx access log。
       </div>
     );
   }
-
-  // 找到最大总时长作为请求时长条的归一化基线
-  const maxTotal = Math.max(...rows.map(fmtDuration), 1);
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -73,18 +57,15 @@ export function LogTable({ entries, maxRows = 30 }: Props) {
             <th className="w-44 px-3 py-2 text-left font-medium">时间</th>
             <th className="w-32 px-3 py-2 text-left font-medium">客户端 IP</th>
             <th className="px-3 py-2 text-left font-medium">请求路径</th>
-            <th className="w-20 px-3 py-2 text-left font-medium">请求</th>
-            <th className="w-20 px-3 py-2 text-right font-medium">响应</th>
-            <th className="w-20 px-3 py-2 text-right font-medium">长度</th>
-            <th className="px-3 py-2 text-left font-medium">请求时长</th>
+            <th className="w-20 px-3 py-2 text-left font-medium">方法</th>
+            <th className="w-20 px-3 py-2 text-right font-medium">状态</th>
+            <th className="w-24 px-3 py-2 text-right font-medium">大小</th>
             <th className="w-10 px-2 py-2 text-center font-medium">+</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((e, i) => {
             const isOpen = open.has(i);
-            const total = fmtDuration(e);
-            const pct = Math.round((total / maxTotal) * 100);
             return (
               <>
                 <tr
@@ -96,54 +77,38 @@ export function LogTable({ entries, maxRows = 30 }: Props) {
                   onClick={() => toggle(i)}
                 >
                   <td className="px-3 py-2 text-slate-700">{fmtTime(e.ts)}</td>
-                  <td className="px-3 py-2 font-mono text-sky-700">
-                    {e.client_ip ?? "—"}
-                  </td>
+                  <td className="px-3 py-2 font-mono text-sky-700">{e.client_ip ?? "—"}</td>
                   <td className="px-3 py-2 font-mono text-slate-700">
-                    <span className="truncate">{e.path ?? "—"}</span>
+                    <div className="max-w-md truncate">{e.path ?? "—"}</div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-slate-500">
-                    {e.method ?? "—"}
-                  </td>
-                  <td
-                    className={clsx(
-                      "px-3 py-2 text-right font-mono",
-                      statusColor(e.status),
-                    )}
-                  >
+                  <td className="px-3 py-2 font-mono text-slate-500">{e.method ?? "—"}</td>
+                  <td className={clsx("px-3 py-2 text-right font-mono", statusColor(e.status))}>
                     {e.status ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-600">
-                    {fmtBytes(e.bytes_sent)}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className={clsx(
-                            "h-full rounded-full",
-                            total > 200
-                              ? "bg-amber-400"
-                              : total > 100
-                                ? "bg-sky-400"
-                                : "bg-emerald-400",
-                          )}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="w-12 text-right font-mono text-xs text-slate-500">
-                        {total} ms
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 text-center text-slate-400">
-                    {isOpen ? "−" : "+"}
-                  </td>
+                  <td className="px-3 py-2 text-right text-slate-600">{fmtBytes(e.bytes_sent)}</td>
+                  <td className="px-2 py-2 text-center text-slate-400">{isOpen ? "−" : "+"}</td>
                 </tr>
                 {isOpen && (
                   <tr key={`d-${i}`}>
-                    <td colSpan={8} className="bg-slate-50/40 p-4">
-                      <LatencyChain entry={e} />
+                    <td colSpan={7} className="bg-slate-50/40 p-4">
+                      <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
+                        <Field label="完整请求">
+                          <span className="font-mono">
+                            {e.method} {e.path} → {e.status}
+                          </span>
+                        </Field>
+                        <Field label="客户端 IP">
+                          <span className="font-mono">{e.client_ip ?? "—"}</span>
+                        </Field>
+                        <Field label="User-Agent">
+                          <span className="break-all">{e.user_agent ?? "—"}</span>
+                        </Field>
+                        <Field label="Referer">
+                          <span className="break-all">{e.referer ?? "—"}</span>
+                        </Field>
+                        <Field label="响应大小">{fmtBytes(e.bytes_sent)}</Field>
+                        <Field label="行号">#{e.line_no}</Field>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -157,6 +122,15 @@ export function LogTable({ entries, maxRows = 30 }: Props) {
           已显示前 {maxRows} 条,共 {entries.length} 条
         </div>
       )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded bg-white p-2 ring-1 ring-slate-200">
+      <div className="mb-0.5 text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="text-slate-700">{children}</div>
     </div>
   );
 }
