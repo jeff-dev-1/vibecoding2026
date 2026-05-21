@@ -199,59 +199,78 @@ export function AnalysisReport({ a }: { a: LogAnalysis }) {
         </SectionCard>
       )}
 
-      {/* ⑤ Traffic Patterns */}
-      {a.traffic_patterns.length > 0 && (
-        <SectionCard title="Traffic Patterns" icon="📊" count={a.traffic_patterns.length}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-400">
-                  <th className="py-2 pr-3 text-left font-medium">URL Path</th>
-                  <th className="w-20 py-2 pr-3 text-left font-medium">Method</th>
-                  <th className="w-16 py-2 pr-3 text-right font-medium">Hits</th>
-                  <th className="w-40 py-2 text-left font-medium">Status Codes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {a.traffic_patterns.slice(0, 20).map((p, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-1.5 pr-3 font-mono text-xs text-slate-700">
-                      <div className="max-w-md truncate">{p.url_path}</div>
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs text-slate-500">
-                      {p.method}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right font-mono text-slate-600">
-                      {p.hits}
-                    </td>
-                    <td className="py-1.5">
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(p.status_codes).map(([code, n]) => (
-                          <span
-                            key={code}
-                            className={clsx(
-                              "rounded px-1.5 py-0.5 text-[10px] font-mono",
-                              code.startsWith("5")
-                                ? "bg-rose-50 text-rose-600"
-                                : code.startsWith("4")
-                                  ? "bg-amber-50 text-amber-600"
-                                  : code.startsWith("3")
-                                    ? "bg-sky-50 text-sky-600"
-                                    : "bg-emerald-50 text-emerald-600",
-                            )}
-                          >
-                            {code}: {n}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-      )}
+      {/* ⑤ Traffic Patterns / Error Patterns (自适应) */}
+      {a.traffic_patterns.length > 0 &&
+        (() => {
+          // error 日志的 status_codes 全空 -> 切换成"错误模式"表头
+          const isError = a.traffic_patterns.every(
+            (p) => Object.keys(p.status_codes || {}).length === 0,
+          );
+          return (
+            <SectionCard
+              title={isError ? "Error Patterns" : "Traffic Patterns"}
+              icon="📊"
+              count={a.traffic_patterns.length}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-400">
+                      <th className="py-2 pr-3 text-left font-medium">
+                        {isError ? "消息模式" : "URL Path"}
+                      </th>
+                      <th className="w-24 py-2 pr-3 text-left font-medium">
+                        {isError ? "级别" : "Method"}
+                      </th>
+                      <th className="w-16 py-2 pr-3 text-right font-medium">次数</th>
+                      {!isError && (
+                        <th className="w-40 py-2 text-left font-medium">Status Codes</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.traffic_patterns.slice(0, 20).map((p, i) => (
+                      <tr key={i} className="border-b border-slate-100">
+                        <td className="py-1.5 pr-3 font-mono text-xs text-slate-700">
+                          <div className="max-w-md truncate">{p.url_path}</div>
+                        </td>
+                        <td className="py-1.5 pr-3 font-mono text-xs text-slate-500">
+                          {p.method}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-slate-600">
+                          {p.hits}
+                        </td>
+                        {!isError && (
+                          <td className="py-1.5">
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(p.status_codes).map(([code, n]) => (
+                                <span
+                                  key={code}
+                                  className={clsx(
+                                    "rounded px-1.5 py-0.5 text-[10px] font-mono",
+                                    code.startsWith("5")
+                                      ? "bg-rose-50 text-rose-600"
+                                      : code.startsWith("4")
+                                        ? "bg-amber-50 text-amber-600"
+                                        : code.startsWith("3")
+                                          ? "bg-sky-50 text-sky-600"
+                                          : "bg-emerald-50 text-emerald-600",
+                                  )}
+                                >
+                                  {code}: {n}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          );
+        })()}
     </div>
   );
 }

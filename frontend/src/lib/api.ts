@@ -97,8 +97,11 @@ export type GatewayPrompts = {
   scenario_prompts: PromptItem[];
 };
 
+export type LogKind = "access" | "error" | "generic";
+
 export type ParsedLogEntry = {
   line_no: number;
+  kind?: LogKind;
   ts?: string | null;
   client_ip?: string | null;
   method?: string | null;
@@ -107,6 +110,8 @@ export type ParsedLogEntry = {
   bytes_sent?: number | null;
   user_agent?: string | null;
   referer?: string | null;
+  level?: string | null;
+  message?: string | null;
 };
 
 export type Job = {

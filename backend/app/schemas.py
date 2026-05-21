@@ -90,20 +90,31 @@ class LogAnalysis(BaseModel):
 
 # ===== 解析后的单条日志记录 (扩展 Nginx parser 后产物) =====
 
-class ParsedLogEntry(BaseModel):
-    """从原始 Nginx access log 行解析出来的真实字段。
+LogKind = Literal["access", "error", "generic"]
 
-    只保留 access log 真实存在的字段 — 不伪造链路延时(nginx 默认不打 $request_time)。
+
+class ParsedLogEntry(BaseModel):
+    """解析后的单条日志, 兼容两种 web server 日志:
+
+    - access 日志 (nginx/apache combined): method/path/status/bytes/ua
+    - error 日志 (apache error_log): level/message/client_ip
+
+    只保留日志里真实存在的字段 — 不伪造。
     """
     line_no: int
+    kind: LogKind = "access"
     ts: datetime | None = None
     client_ip: str | None = None
+    # access 字段
     method: str | None = None
     path: str | None = None
     status: int | None = None
     bytes_sent: int | None = None
     user_agent: str | None = None
     referer: str | None = None
+    # error 日志字段
+    level: str | None = None
+    message: str | None = None
 
 
 # ===== Evidence / Job (向后兼容) =====

@@ -54,7 +54,14 @@ class _AnalysisLLM(BaseModel):
     events: list[_EventLLM] = Field(default_factory=list)
 
 
-SYSTEM_PROMPT = """You are a security log analysis engine (STRESSED-style). Return ONLY a JSON object:
+SYSTEM_PROMPT = """You are a server log analysis engine (STRESSED-style).
+The log may be: ACCESS log (nginx/apache combined), Apache ERROR log, or Linux syslog.
+Adapt:
+- access log: focus on status codes, scanning, suspicious paths/UAs.
+- apache error log: forbidden-dir / file-not-exist probes, module failures, [client] IPs.
+- linux syslog: SSH brute force (repeated authentication failure from rhost IPs),
+  invalid users, privilege escalation (su/sudo), service anomalies.
+Return ONLY a JSON object:
 
 {
   "summary": "2-4 sentence plain-language overview (Chinese ok)",

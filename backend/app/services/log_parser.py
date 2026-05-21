@@ -60,6 +60,25 @@ _NGINX_RE = re.compile(
 
 _NGINX_TS_FMT = "%d/%b/%Y:%H:%M:%S %z"
 
+# Apache error_log: [Thu Jun 09 07:11:21 2005] [error] [client 1.2.3.4] message
+_APACHE_ERR_RE = re.compile(
+    r'^\[(?P<ts>[^\]]+)\]\s+'
+    r'\[(?P<level>[a-z]+)\]\s+'
+    r'(?:\[client (?P<ip>[^\]]+)\]\s+)?'
+    r'(?P<msg>.*)$'
+)
+_APACHE_ERR_TS_FMT = "%a %b %d %H:%M:%S %Y"
+
+# Linux syslog: Jun 14 15:16:01 combo sshd(pam_unix)[19939]: message...
+_SYSLOG_RE = re.compile(
+    r'^(?P<ts>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+'
+    r'(?P<host>\S+)\s+'
+    r'(?P<proc>[\w.\-]+(?:\([\w.\-]+\))?)(?:\[(?P<pid>\d+)\])?:\s+'
+    r'(?P<msg>.*)$'
+)
+_SYSLOG_TS_FMT = "%b %d %H:%M:%S"
+_RHOST_RE = re.compile(r'rhost=(\S+)')
+
 
 def _parse_nginx_line(line: str, line_no: int) -> ParsedLogEntry | None:
     m = _NGINX_RE.match(line)
@@ -76,6 +95,7 @@ def _parse_nginx_line(line: str, line_no: int) -> ParsedLogEntry | None:
 
     return ParsedLogEntry(
         line_no=line_no,
+        kind="access",
         ts=ts,
         client_ip=m["ip"],
         method=m["method"],
@@ -87,18 +107,75 @@ def _parse_nginx_line(line: str, line_no: int) -> ParsedLogEntry | None:
     )
 
 
-def parse_entries(raw: str, source: str = "nginx", limit: int = 200) -> list[ParsedLogEntry]:
-    """Return up to `limit` parsed entries; lines that don't match are skipped."""
+def _parse_apache_error(line: str, line_no: int) -> ParsedLogEntry | None:
+    m = _APACHE_ERR_RE.match(line)
+    if not m:
+        return None
+    try:
+        ts = datetime.strptime(m["ts"], _APACHE_ERR_TS_FMT)
+    except (ValueError, KeyError):
+        ts = None
+    return ParsedLogEntry(
+        line_no=line_no,
+        kind="error",
+        ts=ts,
+        client_ip=m["ip"],
+        level=m["level"],
+        message=(m["msg"] or "")[:300],
+    )
+
+
+def _parse_syslog(line: str, line_no: int) -> ParsedLogEntry | None:
+    m = _SYSLOG_RE.match(line)
+    if not m:
+        return None
+    ts_str = " ".join(m["ts"].split())  # 折叠空格补全 (Jun  9 -> Jun 9)
+    try:
+        dt = datetime.strptime(ts_str, _SYSLOG_TS_FMT).replace(year=datetime.now().year)
+    except ValueError:
+        dt = None
+    msg = m["msg"] or ""
+    rhost = _RHOST_RE.search(msg)
+    low = msg.lower()
+    if any(k in low for k in ("fail", "illegal", "invalid", "denied", "refused", "error")):
+        level = "error"
+    elif any(k in low for k in ("session opened", "session closed", "accepted")):
+        level = "info"
+    else:
+        level = "notice"
+    return ParsedLogEntry(
+        line_no=line_no,
+        kind="error",
+        ts=dt,
+        client_ip=rhost.group(1) if rhost else None,
+        level=level,
+        message=f"{m['proc']}: {msg}"[:300],
+    )
+
+
+def parse_entries(raw: str, source: str = "auto", limit: int = 1000) -> list[ParsedLogEntry]:
+    """Auto-detect 每行格式 (nginx/apache access / apache error / linux syslog), 跳过不匹配行。
+
+    source 参数保留兼容, 但解析始终自动识别 — 上传任意常见日志都能用。
+    """
     out: list[ParsedLogEntry] = []
     for i, line in enumerate(raw.splitlines(), start=1):
         if len(out) >= limit:
             break
-        if source == "nginx":
-            entry = _parse_nginx_line(line, i)
-            if entry:
-                out.append(entry)
-        else:
-            out.append(
-                ParsedLogEntry(line_no=i, path=line[:200] if line else None)
-            )
+        if not line.strip():
+            continue
+        entry = (
+            _parse_nginx_line(line, i)
+            or _parse_apache_error(line, i)
+            or _parse_syslog(line, i)
+        )
+        if entry:
+            out.append(entry)
     return out
+
+
+def dominant_kind(entries: list[ParsedLogEntry]) -> str:
+    if not entries:
+        return "access"
+    n_err = sum(1 for e in entries if e.kind == "error")
+    return "error" if n_err > len(entries) / 2 else "access"

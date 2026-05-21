@@ -29,7 +29,10 @@ export function TimeHistogram({ entries, bucketMinutes = 15 }: Props) {
       if (isNaN(t)) continue;
       const key = Math.floor(t / bucketMs) * bucketMs;
       const cur = buckets.get(key) ?? { normal: 0, severe: 0 };
-      const severe = (e.status ?? 0) >= 400;
+      const lvl = (e.level ?? "").toLowerCase();
+      const severe =
+        (e.status ?? 0) >= 400 ||
+        ["error", "crit", "alert", "emerg", "warn", "warning"].includes(lvl);
       if (severe) cur.severe += 1;
       else cur.normal += 1;
       buckets.set(key, cur);
