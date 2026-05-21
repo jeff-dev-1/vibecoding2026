@@ -97,6 +97,19 @@ services:
     ports:
       - "3000:3000"
 
+  nginx-tls:
+    image: nginx:1.27-alpine
+    container_name: alad-nginx-tls
+    profiles: ["tls"]   # 默认不启; `docker compose --profile tls up -d nginx-tls`
+    depends_on:
+      - frontend
+    volumes:
+      - ./infra/tls/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/tls/certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+      - "8443:80"   # http->https 跳转 (80 给 milos 留着, 用 8443)
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.115.0
     container_name: alad-otel

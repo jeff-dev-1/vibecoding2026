@@ -36,7 +36,10 @@ podTemplate(label: label, containers: [
 
       stage('Docker Build') {
         container('docker') {
+          // DOCKER_BUILDKIT=0 强制经典 builder — 挂 host docker.sock 时确保镜像 load 进本地库
+          // (buildkit 默认可能只进 build cache, push 找不到 tag)
           sh """
+            export DOCKER_BUILDKIT=0
             docker build -t ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:${BUILD_NUMBER} \\
                          -t ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:latest \\
                          -f backend/Dockerfile backend/
@@ -44,6 +47,9 @@ podTemplate(label: label, containers: [
             docker build -t ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:${BUILD_NUMBER} \\
                          -t ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:latest \\
                          -f frontend/Dockerfile frontend/
+
+            echo "=== built images ==="
+            docker images | grep vibe-coding-demo || true
           """
         }
       }
