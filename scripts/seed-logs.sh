@@ -14,16 +14,25 @@ NGINX_FIXTURE=$(mktemp)
     ts=$(date -u +"%d/%b/%Y:%H:%M:%S +0000")
     echo "192.168.1.$((RANDOM % 254 + 1)) - - [$ts] \"GET /api/v1/items?id=$i HTTP/1.1\" 200 1234 \"-\" \"Mozilla/5.0\""
   done
-  # 5xx spike
+  # 5xx spike — 集中在 2 个内网 IP (后端实例挂了)
   for i in $(seq 1 50); do
     ts=$(date -u +"%d/%b/%Y:%H:%M:%S +0000")
-    echo "10.0.0.$((RANDOM % 254 + 1)) - - [$ts] \"POST /api/v1/checkout HTTP/1.1\" 502 0 \"-\" \"Mozilla/5.0\""
+    ip=$([ $((i % 2)) -eq 0 ] && echo "10.0.0.21" || echo "10.0.0.22")
+    echo "$ip - - [$ts] \"POST /api/v1/checkout HTTP/1.1\" 502 0 \"-\" \"Mozilla/5.0\""
   done
-  # admin scan
-  for i in $(seq 1 30); do
-    ts=$(date -u +"%d/%b/%Y:%H:%M:%S +0000")
-    echo "203.0.113.$((RANDOM % 254 + 1)) - - [$ts] \"GET /admin/$RANDOM HTTP/1.1\" 404 162 \"-\" \"curl/7.68.0\""
+  # admin 目录枚举 — 集中在 3 个扫描源, 次数有梯度 (.10 最多, 便于 '谁扫最多' 演示)
+  scan_ips=("203.0.113.10:25" "203.0.113.11:15" "203.0.113.12:8")
+  for entry in "${scan_ips[@]}"; do
+    ip="${entry%%:*}"; n="${entry##*:}"
+    for j in $(seq 1 "$n"); do
+      ts=$(date -u +"%d/%b/%Y:%H:%M:%S +0000")
+      echo "$ip - - [$ts] \"GET /admin/$RANDOM HTTP/1.1\" 404 162 \"-\" \"curl/7.68.0\""
+    done
   done
+  # 一条 URL 注入特征 (给 url-injection 场景演示用)
+  ts=$(date -u +"%d/%b/%Y:%H:%M:%S +0000")
+  echo "45.137.21.9 - - [$ts] \"GET /search?q=1%27%20OR%20%271%27=%271 HTTP/1.1\" 200 512 \"-\" \"sqlmap/1.5\""
+  echo "45.137.21.9 - - [$ts] \"GET /../../etc/passwd HTTP/1.1\" 404 162 \"-\" \"python-requests/2.28\""
 } > "$NGINX_FIXTURE"
 
 echo "[seed] uploading nginx fixture..."
