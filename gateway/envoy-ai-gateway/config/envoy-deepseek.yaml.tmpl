@@ -1,6 +1,9 @@
-# Envoy AI Gateway — DeepSeek 上游版
-# 启动时由 entrypoint.sh 用 sed 将 __DEEPSEEK_API_KEY__ 替换为真值
-# 关联 PPT Slide 38
+# Envoy AI Gateway — DeepSeek + Qwen 双上游版
+# 路由规则: 请求头 X-LLM-Backend: qwen   → 走 qwen_cluster (DashScope)
+#           其他/默认                     → 走 deepseek_cluster
+# 由 entrypoint.sh 把 __DEEPSEEK_API_KEY__ / __QWEN_API_KEY__ 替换为真值
+#
+# 对应 PPT Slide 38: 一个 Gateway 接多模型,业务代码不动
 
 admin:
   address:
@@ -29,6 +32,7 @@ static_resources:
                           method: "%REQ(:METHOD)%"
                           path: "%REQ(:PATH)%"
                           model: "%REQ(X-LLM-MODEL)%"
+                          backend: "%REQ(X-LLM-BACKEND)%"
                           api_key_id: "%REQ(X-API-KEY-ID)%"
                           response_code: "%RESPONSE_CODE%"
                           bytes_received: "%BYTES_RECEIVED%"
@@ -42,26 +46,44 @@ static_resources:
                     - name: ai_vhost
                       domains: ["*"]
                       routes:
+                        # ===== Qwen 路由 (header X-LLM-Backend: qwen) =====
+                        - match:
+                            prefix: "/v1/chat/completions"
+                            headers:
+                              - name: "x-llm-backend"
+                                string_match: { exact: "qwen" }
+                          route:
+                            cluster: qwen_cluster
+                            timeout: 120s
+                            host_rewrite_literal: dashscope.aliyuncs.com
+                            prefix_rewrite: "/compatible-mode/v1/chat/completions"
+                          request_headers_to_remove: ["authorization"]
+                          request_headers_to_add:
+                            - header:
+                                key: "authorization"
+                                value: "Bearer __QWEN_API_KEY__"
+                              append_action: ADD_IF_ABSENT
+                        # ===== DeepSeek 路由 (默认) =====
                         - match: { prefix: "/v1/chat/completions" }
                           route:
                             cluster: deepseek_cluster
                             timeout: 120s
                             host_rewrite_literal: api.deepseek.com
-                          # 剥离客户端 demo bearer, 注入真 key
                           request_headers_to_remove: ["authorization"]
                           request_headers_to_add:
                             - header:
                                 key: "authorization"
                                 value: "Bearer __DEEPSEEK_API_KEY__"
                               append_action: ADD_IF_ABSENT
+                        # ===== 健康 =====
                         - match: { path: "/health" }
                           direct_response:
                             status: 200
                             body:
-                              inline_string: '{"ok":true,"gateway":"envoy-ai-gateway","upstream":"deepseek"}'
+                              inline_string: '{"ok":true,"gateway":"envoy-ai-gateway","upstreams":["deepseek","qwen"]}'
 
                 http_filters:
-                  # —— 1. Demo API Key 校验 + Guardrail (Lua) —— #
+                  # —— 1. Demo bearer 校验 + Guardrail (Lua) —— #
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
@@ -121,8 +143,8 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
                       stat_prefix: ai_ratelimit
                       token_bucket:
-                        max_tokens: 60
-                        tokens_per_fill: 60
+                        max_tokens: 120
+                        tokens_per_fill: 120
                         fill_interval: 60s
                       filter_enabled:
                         runtime_key: local_rate_limit_enabled
@@ -155,3 +177,23 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
           sni: api.deepseek.com
+
+    - name: qwen_cluster
+      connect_timeout: 10s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: qwen_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dashscope.aliyuncs.com
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: dashscope.aliyuncs.com

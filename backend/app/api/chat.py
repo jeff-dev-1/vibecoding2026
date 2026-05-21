@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..gateway.client import GatewayError
+from ..prompts import scenario_prompt
 from ..schemas import ChatRequest, ChatResponse, Citation
 from ..security.input_guard import check
 from ..services.rag import answer
@@ -18,20 +19,36 @@ async def query(req: ChatRequest) -> ChatResponse:
             answer="",
             citations=[],
             model="guarded",
+            backend=req.backend,
             blocked=True,
             block_reason="; ".join(guard.reasons),
         )
 
     cleaned = guard.cleaned_text or req.question
+    # PII 脱敏 — 不阻断, 但记录下来让前端可见
+    redacted = guard.verdict == "redact"
+    redaction_rules = guard.reasons if redacted else []
+    redaction_preview = guard.cleaned_text if redacted else None
+
+    # 场景化前缀拼接 — quick-action 一键提问
+    sp = scenario_prompt(req.scenario) if req.scenario else None
+    if sp:
+        cleaned = sp + "\n\n用户问题: " + cleaned
 
     try:
-        result = await answer(cleaned, top_k=req.top_k, log_id=req.log_id)
+        result = await answer(
+            cleaned,
+            top_k=req.top_k,
+            log_id=req.log_id,
+            backend=req.backend,
+        )
     except GatewayError as e:
         if e.guardrail == "prompt-injection-blocked":
             return ChatResponse(
                 answer="",
                 citations=[],
                 model="gateway-guarded",
+                backend=req.backend,
                 blocked=True,
                 block_reason="gateway: prompt-injection-blocked",
             )
@@ -48,4 +65,12 @@ async def query(req: ChatRequest) -> ChatResponse:
         )
         for c in result.chunks
     ]
-    return ChatResponse(answer=result.answer, citations=citations, model=result.model)
+    return ChatResponse(
+        answer=result.answer,
+        citations=citations,
+        model=result.model,
+        backend=req.backend,
+        redacted=redacted,
+        redaction_rules=redaction_rules,
+        redaction_preview=redaction_preview,
+    )
