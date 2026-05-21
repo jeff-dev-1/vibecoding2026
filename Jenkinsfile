@@ -63,6 +63,13 @@ podTemplate(label: label, containers: [
               docker push ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:latest
               docker push ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:${BUILD_NUMBER}
               docker push ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:latest
+
+              # 清理本次构建产物 + build cache, 防止 K8s 节点磁盘被堆满 (Evicted 根因)
+              # 镜像已 push 到 harbor, 本地不留
+              docker image rm ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:${BUILD_NUMBER} ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:latest || true
+              docker image rm ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:${BUILD_NUMBER} ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:latest || true
+              docker builder prune -f || true
+              docker image prune -f || true
             """
           }
         }
