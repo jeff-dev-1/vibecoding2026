@@ -18,3 +18,7 @@ security/deps/reports/
 
 # 自签证书 (运行时生成, 含私钥)
 infra/tls/certs/
+
+# testdata 样本日志要入仓 (覆盖上面的 *.log)
+!testdata/
+!testdata/*.log
