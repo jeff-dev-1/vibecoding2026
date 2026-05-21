@@ -7,13 +7,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 
-from ..agents.analyzer import analyze
+from ..agents.analyzer import index_and_analyze
 from ..config import settings
 from ..db import SessionLocal
 from ..schemas import EvidenceItem, JobResponse, LogAnalysis, ParsedLogEntry, UploadResponse
-from ..services.embedding import embed
-from ..services.log_parser import parse_entries, split
-from ..services.vector_store import insert_chunks
+from ..services.log_parser import parse_entries
 
 router = APIRouter()
 
@@ -37,10 +35,7 @@ async def upload(
     log_id = uuid4()
     job_id = uuid4()
 
-    # 同时做两件事:
-    # 1. chunk + embedding (给 RAG 用)
-    # 2. 逐行解析为 ParsedLogEntry (给前端表格 / 5 段链路用)
-    chunks = split(text_body)
+    # 只做轻量解析 (逐行 -> 表格用 entries), 秒级
     entries = parse_entries(text_body, source=source, limit=1000)
     entries_json = [e.model_dump(mode="json") for e in entries]
 
@@ -57,18 +52,12 @@ async def upload(
                 "INSERT INTO analysis_jobs (id, log_id, status, sample_entries) "
                 "VALUES (:id, :log, 'pending', CAST(:se AS jsonb))"
             ),
-            {
-                "id": str(job_id),
-                "log": str(log_id),
-                "se": json.dumps(entries_json),
-            },
+            {"id": str(job_id), "log": str(log_id), "se": json.dumps(entries_json)},
         )
         await s.commit()
 
-    vecs = embed([c.text for c in chunks])
-    await insert_chunks(log_id, chunks, vecs)
-
-    bg.add_task(analyze, log_id, job_id)
+    # 重活 (chunk + embedding + 入库 + LLM 分析) 全进后台 — upload 秒返回
+    bg.add_task(index_and_analyze, log_id, job_id, text_body)
 
     return UploadResponse(log_id=log_id, job_id=job_id, bytes=len(raw))
 

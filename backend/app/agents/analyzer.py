@@ -20,8 +20,9 @@ from ..db import SessionLocal
 from ..gateway.client import GatewayError, chat_structured
 from ..schemas import LogAnalysis, ParsedLogEntry, TrafficStat
 from ..services.embedding import embed
+from ..services.log_parser import split
 from ..services.traffic import aggregate
-from ..services.vector_store import StoredChunk, search
+from ..services.vector_store import StoredChunk, insert_chunks, search
 
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -94,6 +95,22 @@ Rules:
 - Do NOT include traffic statistics (computed separately).
 - No prose outside JSON. No code fences.
 """
+
+
+async def index_and_analyze(log_id: UUID, job_id: UUID, raw: str) -> None:
+    """后台任务: 切块 + embedding + 批量入库, 然后跑分析。
+
+    从 upload 请求路径挪到这里 — upload 秒返回, 重活异步做。
+    """
+    await _set_status(job_id, "running")
+    try:
+        chunks = split(raw)
+        vecs = embed([c.text for c in chunks])
+        await insert_chunks(log_id, chunks, vecs)
+    except Exception as e:
+        await _fail(job_id, f"indexing failed: {e!r}")
+        return
+    await analyze(log_id, job_id)
 
 
 async def analyze(log_id: UUID, job_id: UUID) -> None:

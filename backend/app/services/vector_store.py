@@ -23,22 +23,26 @@ class StoredChunk:
 
 async def insert_chunks(log_id: UUID, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
     assert len(chunks) == len(embeddings)
+    if not chunks:
+        return
+    # 批量入库 (executemany) — 比逐条 await 快一个数量级, 大文件不再卡
+    params = [
+        {
+            "log_id": str(log_id),
+            "idx": c.idx,
+            "ls": c.line_start,
+            "le": c.line_end,
+            "t": c.text,
+            "emb": str(vec),
+        }
+        for c, vec in zip(chunks, embeddings, strict=True)
+    ]
+    stmt = text(
+        "INSERT INTO log_chunks (log_id, chunk_idx, line_start, line_end, text, embedding) "
+        "VALUES (:log_id, :idx, :ls, :le, :t, CAST(:emb AS vector))"
+    )
     async with SessionLocal() as s:
-        for c, vec in zip(chunks, embeddings, strict=True):
-            await s.execute(
-                text(
-                    "INSERT INTO log_chunks (log_id, chunk_idx, line_start, line_end, text, embedding) "
-                    "VALUES (:log_id, :idx, :ls, :le, :t, CAST(:emb AS vector))"
-                ),
-                {
-                    "log_id": str(log_id),
-                    "idx": c.idx,
-                    "ls": c.line_start,
-                    "le": c.line_end,
-                    "t": c.text,
-                    "emb": str(vec),
-                },
-            )
+        await s.execute(stmt, params)  # list of dicts -> asyncpg executemany
         await s.commit()
 
 
