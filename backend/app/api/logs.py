@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from typing import Literal
+import json
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 
-from ..agents.analyzer import analyze
+from ..agents.analyzer import index_and_analyze
 from ..config import settings
 from ..db import SessionLocal
-from ..schemas import EvidenceItem, JobResponse, UploadResponse
-from ..services.embedding import embed
-from ..services.log_parser import split
-from ..services.vector_store import insert_chunks
+from ..schemas import EvidenceItem, JobResponse, LogAnalysis, ParsedLogEntry, UploadResponse
+from ..services.log_parser import parse_entries
 
 router = APIRouter()
 
@@ -36,6 +35,10 @@ async def upload(
     log_id = uuid4()
     job_id = uuid4()
 
+    # 只做轻量解析 (逐行 -> 表格用 entries), 秒级
+    entries = parse_entries(text_body, source=source, limit=1000)
+    entries_json = [e.model_dump(mode="json") for e in entries]
+
     async with SessionLocal() as s:
         await s.execute(
             text(
@@ -46,20 +49,56 @@ async def upload(
         )
         await s.execute(
             text(
-                "INSERT INTO analysis_jobs (id, log_id, status) "
-                "VALUES (:id, :log, 'pending')"
+                "INSERT INTO analysis_jobs (id, log_id, status, sample_entries) "
+                "VALUES (:id, :log, 'pending', CAST(:se AS jsonb))"
             ),
-            {"id": str(job_id), "log": str(log_id)},
+            {"id": str(job_id), "log": str(log_id), "se": json.dumps(entries_json)},
         )
         await s.commit()
 
-    chunks = split(text_body)
-    vecs = embed([c.text for c in chunks])
-    await insert_chunks(log_id, chunks, vecs)
-
-    bg.add_task(analyze, log_id, job_id)
+    # 重活 (chunk + embedding + 入库 + LLM 分析) 全进后台 — upload 秒返回
+    bg.add_task(index_and_analyze, log_id, job_id, text_body)
 
     return UploadResponse(log_id=log_id, job_id=job_id, bytes=len(raw))
+
+
+def _row_to_job(r: Any) -> JobResponse:
+    ev_raw = json.loads(r.ev_text) if r.ev_text else None
+    # ev_raw 可能是旧版 (list of evidence) 或新版 ({evidence:[], analysis:{}})
+    evidence_items: list[EvidenceItem] | None = None
+    analysis_obj: LogAnalysis | None = None
+    if isinstance(ev_raw, list):
+        evidence_items = [EvidenceItem(**i) for i in ev_raw]
+    elif isinstance(ev_raw, dict):
+        if ev_raw.get("evidence"):
+            evidence_items = [EvidenceItem(**i) for i in ev_raw["evidence"]]
+        if ev_raw.get("analysis"):
+            analysis_obj = LogAnalysis.model_validate(ev_raw["analysis"])
+
+    se_raw = json.loads(r.se_text) if r.se_text else None
+    sample_entries = (
+        [ParsedLogEntry.model_validate(e) for e in se_raw] if se_raw else None
+    )
+
+    return JobResponse(
+        id=UUID(str(r.id)),
+        log_id=UUID(str(r.log_id)),
+        status=r.status,
+        summary=r.summary,
+        evidence=evidence_items,
+        analysis=analysis_obj,
+        sample_entries=sample_entries,
+        error=r.error,
+        created_at=r.created_at,
+        finished_at=r.finished_at,
+    )
+
+
+_BASE_SELECT = (
+    "SELECT id, log_id, status, summary, "
+    "       evidence::text AS ev_text, sample_entries::text AS se_text, "
+    "       error, created_at, finished_at "
+)
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
@@ -67,33 +106,13 @@ async def get_job(job_id: UUID) -> JobResponse:
     async with SessionLocal() as s:
         row = (
             await s.execute(
-                text(
-                    "SELECT id, log_id, status, summary, evidence::text AS ev_text, error, "
-                    "       created_at, finished_at "
-                    "FROM analysis_jobs WHERE id = :id"
-                ),
+                text(_BASE_SELECT + "FROM analysis_jobs WHERE id = :id"),
                 {"id": str(job_id)},
             )
         ).one_or_none()
     if not row:
         raise HTTPException(404, "job not found")
-
-    import json
-    ev_raw = json.loads(row.ev_text) if row.ev_text else None
-    evidence = (
-        [EvidenceItem(**item) for item in ev_raw] if ev_raw else None
-    )
-
-    return JobResponse(
-        id=UUID(str(row.id)),
-        log_id=UUID(str(row.log_id)),
-        status=row.status,
-        summary=row.summary,
-        evidence=evidence,
-        error=row.error,
-        created_at=row.created_at,
-        finished_at=row.finished_at,
-    )
+    return _row_to_job(row)
 
 
 @router.get("", response_model=list[JobResponse])
@@ -102,30 +121,8 @@ async def list_recent(limit: int = 10) -> list[JobResponse]:
     async with SessionLocal() as s:
         rows = (
             await s.execute(
-                text(
-                    "SELECT id, log_id, status, summary, evidence::text AS ev_text, error, "
-                    "       created_at, finished_at "
-                    "FROM analysis_jobs ORDER BY created_at DESC LIMIT :lim"
-                ),
+                text(_BASE_SELECT + "FROM analysis_jobs ORDER BY created_at DESC LIMIT :lim"),
                 {"lim": limit},
             )
         ).all()
-
-    import json
-    out: list[JobResponse] = []
-    for r in rows:
-        ev_raw = json.loads(r.ev_text) if r.ev_text else None
-        evidence = [EvidenceItem(**i) for i in ev_raw] if ev_raw else None
-        out.append(
-            JobResponse(
-                id=UUID(str(r.id)),
-                log_id=UUID(str(r.log_id)),
-                status=r.status,
-                summary=r.summary,
-                evidence=evidence,
-                error=r.error,
-                created_at=r.created_at,
-                finished_at=r.finished_at,
-            )
-        )
-    return out
+    return [_row_to_job(r) for r in rows]
