@@ -168,6 +168,10 @@ class ChatResponse(BaseModel):
     backend: LLMBackend
     blocked: bool = False
     block_reason: str | None = None
+    # PII 脱敏 (输入被脱敏后才送模型, 不阻断但要让用户看见)
+    redacted: bool = False
+    redaction_rules: list[str] = Field(default_factory=list)
+    redaction_preview: str | None = None
 
 
 # ===== Guardrail test (现场测试用, 不改配置) =====

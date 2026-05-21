@@ -210,6 +210,25 @@ export function AiAssistantDrawer({
                     <span>{resp.citations.length} 处引用</span>
                   </div>
 
+                  {/* PII 脱敏提示 — 不阻断但要让用户看见 */}
+                  {resp.redacted && (
+                    <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
+                      <div className="mb-1 font-medium">🟡 输入含 PII,已脱敏后再送模型</div>
+                      <div className="mb-1 flex flex-wrap gap-1">
+                        {(resp.redaction_rules ?? []).map((r) => (
+                          <span key={r} className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px]">
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                      {resp.redaction_preview && (
+                        <pre className="whitespace-pre-wrap rounded bg-white/70 p-1.5 text-[11px]">
+                          {resp.redaction_preview}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
                   {/* 图表 — 从结构化数据出 (fancy) */}
                   {job && <ScenarioCharts job={job} />}
 

@@ -25,6 +25,10 @@ async def query(req: ChatRequest) -> ChatResponse:
         )
 
     cleaned = guard.cleaned_text or req.question
+    # PII 脱敏 — 不阻断, 但记录下来让前端可见
+    redacted = guard.verdict == "redact"
+    redaction_rules = guard.reasons if redacted else []
+    redaction_preview = guard.cleaned_text if redacted else None
 
     # 场景化前缀拼接 — quick-action 一键提问
     sp = scenario_prompt(req.scenario) if req.scenario else None
@@ -66,4 +70,7 @@ async def query(req: ChatRequest) -> ChatResponse:
         citations=citations,
         model=result.model,
         backend=req.backend,
+        redacted=redacted,
+        redaction_rules=redaction_rules,
+        redaction_preview=redaction_preview,
     )

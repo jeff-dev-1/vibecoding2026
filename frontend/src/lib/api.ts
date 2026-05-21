@@ -138,6 +138,9 @@ export type ChatResponse = {
   backend: LLMBackend;
   blocked: boolean;
   block_reason?: string | null;
+  redacted?: boolean;
+  redaction_rules?: string[];
+  redaction_preview?: string | null;
 };
 
 async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
