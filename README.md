@@ -13,6 +13,7 @@
 | 角色 | 先读 | 再看 |
 |---|---|---|
 | 讲师 | [`INSTRUCTOR.md`](./INSTRUCTOR.md) + [`docs/TRAINING-BREAKDOWN.md`](./docs/TRAINING-BREAKDOWN.md)（14 步教学分解）+ [`docs/TEST-CASES.md`](./docs/TEST-CASES.md)（测试用例）+ [`docs/PPT-ALIGNMENT.md`](./docs/PPT-ALIGNMENT.md)（PPT 对齐缺口） | `WORKFLOW.md` + 现场跑 `make demo` |
+| 学员 | [`docs/STUDENT-PREP.md`](./docs/STUDENT-PREP.md)（课前准备）→ [`docs/BUILD-FROM-ZERO.md`](./docs/BUILD-FROM-ZERO.md)（**从 0 逐步实操手册**，每步可复制 Prompt + 验收 + 兜底） | 跟着 14 步把整个 demo 搭出来 |
 | 研发 | [`CLAUDE.md`](./CLAUDE.md) → [`DESIGN.md`](./DESIGN.md) | `backend/` + `gateway/envoy-ai-gateway/` |
 | 售前 / 解决方案 | [`INSTRUCTOR.md`](./INSTRUCTOR.md) Section "客户提问对照表" | `gateway/portkey/README.md`（产品对比）+ `security/` |
 | 销售 / 管理 | [`docs/PRD.md`](./docs/PRD.md) + 这页"客户价值"那段 | 跳过技术细节 |

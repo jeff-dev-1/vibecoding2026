@@ -9,6 +9,11 @@
 > 🧭 **从 0 到当前 demo 的 14 步教学分解**（含时间分配/每步话术/是否 live）见
 > [`docs/TRAINING-BREAKDOWN.md`](./docs/TRAINING-BREAKDOWN.md)。
 >
+> 🛠 **学员逐步实操手册**（每步可直接复制给 Claude Code 的 Prompt + 验收 + 兜底）见
+> [`docs/BUILD-FROM-ZERO.md`](./docs/BUILD-FROM-ZERO.md) —— 这是"学员真能照着走"的主交付物。
+>
+> 🎒 **学员课前准备清单**见 [`docs/STUDENT-PREP.md`](./docs/STUDENT-PREP.md)。
+>
 > 🔗 **PPT 与 demo 的对齐缺口**（该补哪些 PPT 页 / 哪些调整说法 / Harness 命名层）见
 > [`docs/PPT-ALIGNMENT.md`](./docs/PPT-ALIGNMENT.md)。
 
