@@ -8,13 +8,24 @@ import { LogTable } from "@/components/LogTable";
 import { TimeHistogram } from "@/components/TimeHistogram";
 import { TopBar } from "@/components/TopBar";
 import { UploadBar } from "@/components/UploadBar";
-import { getJob, type Job, type LLMBackend } from "@/lib/api";
+import { getJob, listJobs, type Job, type LLMBackend } from "@/lib/api";
 
 export default function Page() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [backend, setBackend] = useState<LLMBackend>("deepseek");
+
+  // 首屏: 自动加载最近一个完成的分析 (登录即见结果, 不空屏)
+  useEffect(() => {
+    if (jobId) return;
+    listJobs()
+      .then((jobs) => {
+        const latest = jobs.find((j) => j.status === "done") || jobs[0];
+        if (latest) setJobId(latest.id);
+      })
+      .catch(() => {});
+  }, [jobId]);
 
   useEffect(() => {
     if (!jobId) return;
