@@ -28,8 +28,29 @@
 | 阶段 | Step | 主题 | 检查点 |
 |---|---|---|---|
 | A 基础闭环 | 0-6 | 工程契约 → PRD → 骨架 → 实现 → 测试 → Debug → Review | `tutorial-step-0..6` |
-| B AI Native 进阶 | 7-12 | Gateway → 结构化 → 多格式 → 双模型 → Guardrail → 红队 | 无 tag,参考 `main` |
-| C 企业落地 | 13-14 | 登录+CI/CD → 公网/内网 HTTPS | 无 tag,参考 `main` |
+| B AI Native 进阶 | 7-12 | Gateway → 结构化 → 多格式 → 双模型 → Guardrail → 红队 | `training-step-7..12` |
+| C 企业落地 | 13-14 | 登录+CI/CD → 公网/内网 HTTPS | `training-step-13..14` |
+
+## 重要:PPT "Prompt N" ↔ 本手册 Step ↔ tag 对照
+
+PPT(Slide 25-33)用的是 **"Prompt N" 编号**,和本手册的 **Step / tag 编号不是一套**。
+内容能对上,数字对不齐——按下表换算:
+
+| 本手册 Step / tag | 内容 | PPT 对应 Prompt | PPT Slide |
+|---|---|---|---|
+| Step 0 / `tutorial-step-0` | 工程契约 CLAUDE/DESIGN/WORKFLOW | (Session 1 概念,无独立 prompt) | 14 / 16 |
+| Step 1 / `tutorial-step-1` | 需求澄清 → PRD | **Prompt 0** | 25 |
+| Step 2 / `tutorial-step-2` | 项目骨架 | **Prompt 1** | 26-27 |
+| Step 3 / `tutorial-step-3` | 核心实现 backend+frontend+RAG | **Prompt 2 + 3 + 4**(三合一) | 28-30 |
+| Step 4 / `tutorial-step-4` | 测试 + CI | (PPT **跳过 Prompt 5**,此步无编号) | 31 |
+| Step 5 / `tutorial-step-5` | AI Debug | **Prompt 6** | 32 |
+| Step 6 / `tutorial-step-6` | Review | **Prompt 7** | 33 |
+| Step 7-14 / `training-step-7..14` | 阶段 B/C(Gateway/结构化/多格式/双模型/Guardrail/红队/登录/上线) | PPT Slide 35-40/44-45/54-55 | — |
+
+> 两个易混点:① PPT 的 Prompt 2/3/4 在本手册里**合并成一个 Step 3**(对应一个 tag);
+> ② PPT **没有 Prompt 5**(测试步无编号),所以 PPT 的 Prompt 6/7 比 Step 号大 1。
+> **建议:以本手册的 Step / tag 编号为准**(它和可 checkout 的 git tag 一一对应);
+> PPT 的 "Prompt N" 当描述性标签看即可。
 
 ---
 
@@ -207,7 +228,7 @@ cd backend && python -m pytest -q ; cd ..
 
 ---
 
-## Step 4 · Prompt 5 测试 + CI
+## Step 4 · 测试 + CI(PPT 此步无独立 Prompt 编号,跳过了 Prompt 5)
 
 **对应 PPT**:Slide 31
 **起点**:Step 3 完成
