@@ -16,6 +16,7 @@ _lock = threading.Lock()
 # 估算成本 (USD / 1M tokens, input, output) — 近似值, 仅演示量级, 非账单
 _PRICING: dict[str, tuple[float, float]] = {
     "deepseek-chat": (0.27, 1.10),
+    "deepseek-v4-flash": (0.27, 1.10),  # DeepSeek API 实际返回的模型名 (近似按 chat 费率)
     "deepseek-reasoner": (0.55, 2.19),
     "qwen3-coder-plus": (0.30, 1.20),
 }
