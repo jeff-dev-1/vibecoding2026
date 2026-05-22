@@ -292,6 +292,10 @@ make sbom           # Trivy + Syft 看依赖漏洞
 | "你们的产品和 Cursor/Copilot 什么关系？" | Cursor 是 IDE 工作台（PPT Slide 35），我们做的是企业控制面（Slide 38），不冲突，互补 | 画 PPT Slide 34 那张图 |
 | "Envoy AI Gateway 和 Portkey 选哪个？" | 看您部署方式：私有化选 Envoy（CNCF），SaaS 优先选 Portkey | 翻 `gateway/portkey/README.md` |
 
+> **AI GW 现场口径(讲师必明确两句)**:
+> - 「可观测」tab 是 **backend 内存窗口**,用于现场**实时观测**每次调用(provider/model/延迟/tokens/估算成本),**重启会清空**——不是持久化监控(生产接 OTel→Grafana/Tempo)。
+> - **Portkey 是可切换对比路径**,默认演示仍走 **Envoy**;现场可 `GATEWAY_PROVIDER=portkey` + 重启 backend 演示"业务代码不变、换网关",讲完切回 Envoy。
+
 ---
 
 ## 演示后 5 分钟
