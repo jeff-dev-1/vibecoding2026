@@ -12,6 +12,13 @@ class Settings:
     )
     gateway_url: str = os.environ.get("LLM_GATEWAY_URL", "http://envoy-ai-gateway:8080")
     gateway_api_key: str = os.environ.get("LLM_GATEWAY_API_KEY", "demo-key-not-secret")
+    # 网关 provider: envoy (默认, inline 数据面) | portkey (可切换 OSS 网关)
+    gateway_provider: str = os.environ.get("GATEWAY_PROVIDER", "envoy")
+    portkey_url: str = os.environ.get("PORTKEY_URL", "http://gateway-portkey:8787")
+    # Portkey OSS 是无状态代理 → backend 在 portkey 路径下需自带 provider key 透传
+    # (Envoy 路径下 key 在网关注入, backend 不持有 — 这是两条路径的真实差异)
+    deepseek_api_key: str = os.environ.get("DEEPSEEK_API_KEY", "")
+    qwen_api_key: str = os.environ.get("QWEN_API_KEY", "")
     llm_model: str = os.environ.get("LLM_MODEL", "deepseek-chat")
     # backend 默认走哪个上游 (deepseek / qwen); 单请求可以通过 ChatRequest.backend 覆盖
     default_backend: str = os.environ.get("LLM_BACKEND", "deepseek")

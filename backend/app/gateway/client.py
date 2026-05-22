@@ -10,12 +10,14 @@ CLAUDE.md 硬规则: 其他模块禁止 `from openai import ...`/`from anthropic
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from .. import observability
 from ..config import settings
 from ..telemetry import get_tracer
 
@@ -29,6 +31,39 @@ _DEFAULT_MODELS: dict[str, str] = {
     "deepseek": "deepseek-chat",
     "qwen": "qwen3-coder-plus",
 }
+
+# Portkey OSS 路径: provider slug + 可选 custom host
+# (Qwen/DashScope 走 OpenAI 兼容 + custom host; slug/host 以 Portkey 文档为准, 可在此调整)
+_PORTKEY_ROUTES: dict[str, dict[str, str | None]] = {
+    "deepseek": {"provider": "deepseek", "custom_host": None},
+    "qwen": {
+        "provider": "openai",
+        "custom_host": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+}
+
+
+def _build_request(backend: LLMBackend) -> tuple[str, dict[str, str]]:
+    """按 GATEWAY_PROVIDER 选 base URL + header 风格。业务代码不变, 只换这一层。"""
+    if settings.gateway_provider == "portkey":
+        route = _PORTKEY_ROUTES.get(backend, _PORTKEY_ROUTES["deepseek"])
+        key = settings.deepseek_api_key if backend == "deepseek" else settings.qwen_api_key
+        headers = {
+            "Content-Type": "application/json",
+            "x-portkey-provider": route["provider"] or "openai",
+            "Authorization": f"Bearer {key}",
+        }
+        if route["custom_host"]:
+            headers["x-portkey-custom-host"] = route["custom_host"]
+        return f"{settings.portkey_url}/v1/chat/completions", headers
+    # 默认 Envoy: key 在网关注入, backend 只带 demo bearer + 路由头
+    headers = {
+        "Authorization": f"Bearer {settings.gateway_api_key}",
+        "Content-Type": "application/json",
+        "X-LLM-Purpose": "log-analysis",
+        "X-LLM-Backend": backend,
+    }
+    return f"{settings.gateway_url}/v1/chat/completions", headers
 
 
 @dataclass
@@ -71,23 +106,21 @@ async def chat(
     if structured:
         payload["response_format"] = {"type": "json_object"}
 
-    headers = {
-        "Authorization": f"Bearer {settings.gateway_api_key}",
-        "Content-Type": "application/json",
-        "X-LLM-Purpose": "log-analysis",
-        "X-LLM-Backend": backend,
-    }
+    url, headers = _build_request(backend)
 
     tracer = get_tracer()
+    t0 = time.monotonic()
     with tracer.start_as_current_span("llm.chat"):
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{settings.gateway_url}/v1/chat/completions",
-                json=payload,
-                headers=headers,
-            )
+            resp = await client.post(url, json=payload, headers=headers)
+    latency_ms = int((time.monotonic() - t0) * 1000)
 
     if resp.status_code != 200:
+        observability.record(
+            provider=settings.gateway_provider, backend=backend, model=model,
+            prompt_tokens=0, completion_tokens=0, latency_ms=latency_ms,
+            ok=False, guardrail=resp.headers.get("x-guardrail"),
+        )
         raise GatewayError(
             status=resp.status_code,
             body=resp.text,
@@ -98,6 +131,13 @@ async def chat(
     choice = data["choices"][0]
     text = choice["message"]["content"]
     usage = data.get("usage", {})
+    observability.record(
+        provider=settings.gateway_provider, backend=backend,
+        model=data.get("model", model),
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+        latency_ms=latency_ms, ok=True,
+    )
     return CompletionResult(
         text=text,
         model=data.get("model", model),

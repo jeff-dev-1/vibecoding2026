@@ -86,6 +86,7 @@ export type GatewayGuardrail = {
 
 export type GatewayInfo = {
   gateway: string;
+  provider?: string;
   default_backend: string;
   backends: GatewayBackend[];
   guardrails: GatewayGuardrail[];
@@ -309,4 +310,39 @@ export type SupplyChainReport = {
 
 export async function supplyChainReport() {
   return _fetch<SupplyChainReport>("/gateway/supply-chain-report");
+}
+
+// ===== AI GW 可观测性 =====
+
+export type ObsCall = {
+  ts: number;
+  provider: string;
+  backend: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  latency_ms: number;
+  cost_usd: number;
+  ok: boolean;
+  guardrail?: string | null;
+};
+export type Observability = {
+  empty?: boolean;
+  hint?: string;
+  current_provider: string;
+  total_calls?: number;
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
+  total_cost_usd?: number;
+  latency_p50_ms?: number;
+  latency_p95_ms?: number;
+  by_model?: Record<string, { calls: number; tokens: number; cost_usd: number }>;
+  by_backend?: Record<string, { calls: number }>;
+  by_provider?: Record<string, number>;
+  recent?: ObsCall[];
+  window?: number;
+};
+
+export async function gatewayObservability() {
+  return _fetch<Observability>("/gateway/observability");
 }
