@@ -89,6 +89,27 @@ PPT Slide 39 强调"演示风险控制：网络/模型不可用替代方案"。
 
 切换真模型只需要改 `gateway/envoy-ai-gateway/config/ai-service-backend.yaml` 一个文件。
 
+### 2.5 两道网关：模型控制面 + 供应链网关
+
+AI Native 应用有**两条**需要治理的链路，对应两道网关：
+
+| | 模型控制面 (Envoy AI Gateway) | 供应链网关 (Koi) |
+|---|---|---|
+| 治理对象 | 业务**发给模型的请求/返回** | **要安装运行的软件** |
+| 拦什么 | 坏请求：注入 / PII / 越权 | 坏软件：恶意扩展 / 投毒包 / 带毒模型 / 恶意 MCP server |
+| 时机 | 运行时 (数据面) | 安装前 (软件面) |
+| 三态 | BLOCKED / REDACTED / PASS | BLOCK / REQUEST_APPROVAL / PASS |
+| 实现 | `backend/app/gateway/client.py` + Envoy Lua | `backend/app/gateway/koi_client.py` (Koidex API) |
+
+**为什么需要第二道**：Vibe Coding 让 AI 和开发者大量安装扩展(Cursor/VSCode)、拉包(pip/npm)、
+接 MCP server、下 HuggingFace 模型——这些**工具链本身就是攻击面**。运行时 LLM 网关管不到"你装了什么"。
+Koi 的 Koidex API 对每个制品(`item_id` + `marketplace`)返回 `risk`/`risk_level`/findings，
+后端 `koi_client.py` 映射成三态：`high→BLOCK` / `medium→REQUEST_APPROVAL` / `low→PASS`。
+
+**边界与兜底**：Koi 是商业 SaaS(已被 Palo Alto Networks 收购)。`KOI_ENABLED=false` 或网络不可用时，
+`security/supply_chain.py` 走本地样例库兜底(`source=offline`，明确不冒充实时数据)，保证断网现场也能演示三态。
+对应 PPT 的 AI HARNESS 页(模型控制面)与 TOOL LAYER 页("扩展位"本身需要被治理)。
+
 ## 3. 数据模型
 
 ```sql

@@ -72,6 +72,11 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: backend
       EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      # Koi 供应链网关 (Pattern A); 默认关, .env 里开
+      KOI_ENABLED: ${KOI_ENABLED:-false}
+      KOI_API_BASE: ${KOI_API_BASE:-https://api.prod.koi.security/api/external/v2}
+      KOI_API_KEY: ${KOI_API_KEY:-}
+      KOI_AUTH_STYLE: ${KOI_AUTH_STYLE:-bearer}
     ports:
       - "8000:8000"
     healthcheck:

@@ -16,8 +16,15 @@ from sqlalchemy import text
 from ..config import settings
 from ..db import SessionLocal
 from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
-from ..schemas import GuardrailTestRequest, GuardrailTestResponse, RedteamReport
+from ..schemas import (
+    GuardrailTestRequest,
+    GuardrailTestResponse,
+    RedteamReport,
+    SupplyChainCheckRequest,
+    SupplyChainVerdict,
+)
 from ..security.input_guard import check
+from ..security import supply_chain
 
 router = APIRouter()
 
@@ -122,6 +129,26 @@ async def get_redteam_report() -> RedteamReport | dict:
     data = json.loads(row.s)
     data["created_at"] = row.created_at.isoformat() if row.created_at else None
     return RedteamReport.model_validate(data)
+
+
+@router.post("/supply-chain-check", response_model=SupplyChainVerdict)
+async def supply_chain_check(req: SupplyChainCheckRequest) -> SupplyChainVerdict:
+    """供应链网关三态 — 装某个制品前先问 Koi 风险分。
+
+    模型面 Guardrail 拦"坏请求", 这里拦"坏软件"(扩展/包/模型/MCP server)。
+    BLOCK (高危) / REQUEST_APPROVAL (中危) / PASS (低危)。接真 Koi, 不可用走离线兜底。
+    """
+    return await supply_chain.check(req.marketplace, req.item_id, req.version)
+
+
+@router.get("/supply-chain/samples")
+async def supply_chain_samples() -> dict:
+    """前端供应链 tab 用: marketplace 下拉 + 一键演示样例。"""
+    return {
+        "enabled": settings.koi_enabled and bool(settings.koi_api_key),
+        "marketplaces": supply_chain.MARKETPLACES,
+        "samples": supply_chain.SAMPLES,
+    }
 
 
 @router.get("/prompts")

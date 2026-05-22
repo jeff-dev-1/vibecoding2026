@@ -17,6 +17,7 @@
 - **Structured Generation**:LLM 输出走 JSON mode + Pydantic 校验 + 重试(非自由文本)
 - **Envoy AI Gateway**:DeepSeek / Qwen 双模型,按 `X-LLM-Backend` header 路由,业务代码不变
 - **Guardrail 三态**:Prompt 注入 `BLOCKED` / PII `REDACTED` / 正常 `PASS`,页面可现场测
+- **供应链网关(Koi)**:装 pip/npm 包、HF 模型、Cursor/VSCode 扩展、MCP server 前先查风险 → `BLOCK`/`REQUEST_APPROVAL`/`PASS`(模型面拦坏请求,供应链面拦坏软件;未配置走离线兜底)
 - **红队报告**:`make redteam` 跑攻击集 → 各类通过率 + 漏网用例,Gateway 控制面展示
 - **登录门 + 控制面 UI**:密码登录、时间柱图、日志表、AI 助手抽屉、Gateway 控制面板
 

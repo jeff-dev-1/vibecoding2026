@@ -236,3 +236,47 @@ export type RedteamReport = {
 export async function redteamReport() {
   return _fetch<RedteamReport>("/gateway/redteam-report");
 }
+
+// ===== 供应链网关 (Koi) — Pattern A =====
+
+export type SupplyChainState = "BLOCK" | "REQUEST_APPROVAL" | "PASS";
+export type SupplyChainFinding = {
+  finding_name: string;
+  severity: string;
+  description: string;
+  evidence: string;
+};
+export type SupplyChainVerdict = {
+  marketplace: string;
+  item_id: string;
+  item_display_name?: string | null;
+  version?: string | null;
+  state: SupplyChainState;
+  risk?: number | null;
+  risk_level?: string | null;
+  ai_risk_summary?: string | null;
+  findings: SupplyChainFinding[];
+  source: "koi" | "offline";
+  note?: string | null;
+};
+export type SupplyChainSamples = {
+  enabled: boolean;
+  marketplaces: { id: string; label: string }[];
+  samples: { marketplace: string; item_id: string; label: string }[];
+};
+
+export async function supplyChainSamples() {
+  return _fetch<SupplyChainSamples>("/gateway/supply-chain/samples");
+}
+
+export async function supplyChainCheck(args: {
+  marketplace: string;
+  item_id: string;
+  version?: string;
+}) {
+  return _fetch<SupplyChainVerdict>("/gateway/supply-chain-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+}
