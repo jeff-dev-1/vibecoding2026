@@ -119,6 +119,37 @@ Promptfoo 跑 4 类攻击集（注入/越狱/PII/工具滥用），出通过率 
 
 ---
 
+## F. 供应链网关用例（Koi）
+
+第二道网关：模型面 Guardrail 拦**坏请求**，供应链面拦**坏软件**（扩展/包/HF模型/MCP server）。
+控制面「供应链网关」tab：选 marketplace + 填制品 ID（或点样例）→ 三态 + 风险分 + findings。
+
+| 用例（marketplace / item_id） | 期望 | 现场说明 |
+|---|---|---|
+| `pypi` / `requests` | **REQUEST_APPROVAL**（risk 5.3 / medium）| 真实包也可能中风险：过期域名通信 + 长期未维护 |
+| `github_mcp_registry` / `upstash/context7` | **PASS**（risk 2.32 / low）| MCP server 也能查：发布者安装量低 → 低风险放行 |
+| `npm` / `express` 等 | 视 Koi 实时打分 | 现场可任意输入,真查 Koi |
+
+后端直测（UI 那个框走的就是这个端点）：
+
+```bash
+curl -s -X POST localhost:8000/gateway/supply-chain-check \
+  -H 'Content-Type: application/json' \
+  -d '{"marketplace":"pypi","item_id":"requests"}'
+# -> {"state":"REQUEST_APPROVAL","risk":5.3,"risk_level":"medium","source":"koi",...}
+```
+
+**fail-safe（关键安全属性）**：`KOI_ENABLED=true` 但 Koi 不可用（网络/401/超时）时，
+**降级为 `REQUEST_APPROVAL`（source=offline，note="Koi unavailable, manual review required"），绝不 fail-open 放行**。
+回归测试 `backend/tests/test_supply_chain.py::test_enabled_but_koi_unavailable_is_fail_safe` 守这条。
+`KOI_ENABLED=false` 时完全不外调，走本地样例库离线兜底（断网现场也能演示三态）。
+
+> 话术："运行时 LLM 网关管不到'你装了什么'。Vibe Coding 让 AI/开发者大量装扩展、拉包、接 MCP server——
+> 这些工具链本身就是攻击面。Koi 在安装前打分，和模型面 Guardrail 合成两道网关。"
+> 对应 PPT 的 AI HARNESS 页 + TOOL LAYER 页（扩展位本身需要被治理）。
+
+---
+
 ## 现场演示推荐顺序（5 分钟 Guardrail 段）
 
 1. **A10 正常** → 出图表+答案（基线："AI 能干活"）
