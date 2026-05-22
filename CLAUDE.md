@@ -1,6 +1,6 @@
 # CLAUDE.md — 项目记忆（L1）
 
-> 这个文件是 AI 进入这个仓库时的"第一份简报"。对应 PPT Slide 16。
+> 这个文件是 AI 进入这个仓库时的"第一份简报"。对应 PPT 的 PROJECT MEMORY 页。
 > 不要把这个文件写成 README——README 是给人看的，CLAUDE.md 是给 AI Agent 看的执行约定。
 
 ## 项目身份
@@ -8,18 +8,18 @@
 - **名称**：AI Log Analysis Platform
 - **用途**：Vibe Coding 培训现场 Demo，**不是生产系统**
 - **业务目标**：上传 Nginx/App 日志 → AI 总结异常 → 自然语言查询 → 输出可解释证据
-- **演示价值**：把 Slide 22–33 的 6 步 Demo 落到能跑的代码
+- **演示价值**：把 PPT 阶段 A（Step 0–6）的现场 Demo 落到能跑的代码
 
 ## 技术栈（不要换）
 
 | 层 | 选型 | 为什么这个 |
 |---|---|---|
-| Backend | Python 3.11 + FastAPI + Pydantic v2 | Slide 22 明确指定，售前不要换 |
-| Frontend | Next.js 14 (App Router) + Tailwind | Slide 22 指定 |
+| Backend | Python 3.11 + FastAPI + Pydantic v2 | DEMO ARCHITECTURE 页指定，售前不要换 |
+| Frontend | Next.js 14 (App Router) + Tailwind | DEMO ARCHITECTURE 页指定 |
 | Vector | Postgres 16 + pgvector 0.7 | 一个数据库够用，少一个组件少一个翻车点 |
 | LLM 接入 | **必须经过 Envoy AI Gateway**，不要直接调 OpenAI/Anthropic | 这是 Demo 的灵魂 |
-| Gateway | Envoy 1.32 + AI Gateway ext_proc 配置 | Slide 38 的具象产品 |
-| 编排 | docker-compose v2 | Slide 39 要求"能兜底" |
+| Gateway | Envoy 1.32 + AI Gateway ext_proc 配置 | AI HARNESS 页的具象产品 |
+| 编排 | docker-compose v2 | DEMO RUNBOOK 页要求"能兜底" |
 
 ## 目录约定（AI 改代码必须遵守）
 
@@ -33,7 +33,7 @@ backend/app/
 └── schemas.py   ← Pydantic 模型唯一来源
 ```
 
-**违反目录约定的修改一律拒绝**——这是 Slide 13 "越权修改"的具体对策。
+**违反目录约定的修改一律拒绝**——这是 PPT FAILURE MODES 页"越权修改"的具体对策。
 
 ## 禁止事项（hard rules）
 
@@ -52,6 +52,8 @@ DO NOT add dependencies:
 DO NOT bypass:
   - 任何 LLM 调用必须走 app/gateway/client.py
   - 任何用户文本必须先过 app/security/input_guard.py
+  - 任何供应链风险查询走 app/gateway/koi_client.py
+    (Koi 是旁路 advisory 查询 + CI 门禁, 不是 inline 网关; 闸门编排在 app/security/supply_chain.py)
 ```
 
 ## 必须执行（before declaring done）
@@ -69,18 +71,20 @@ make redteam
 
 测试覆盖率门槛：**核心 services 80%，API 60%**。低于门槛 = 任务未完成。
 
-## 与 PPT Slide 对应关系（讲师 / AI 都要懂）
+## 与 PPT 对应关系（讲师 / AI 都要懂）
 
-| Slide | 对应文件/目录 | 用途 |
+> 按 PPT 章节主题（英文页名）引用，不写死页码——deck 重排后不会失效。
+
+| PPT 主题页 | 对应文件/目录 | 用途 |
 |---|---|---|
-| 14 Context Stack | 这个 CLAUDE.md + DESIGN.md + WORKFLOW.md | L1/L2/L3 |
-| 15 Reference Structure | `backend/app/` 五层目录 | 演示项目结构 |
-| 17 Workflow Engineering | `WORKFLOW.md` | 阶段协议 |
-| 18 Quality Shift Left | `backend/pyproject.toml` 里 ruff/mypy + tests/ | 质量左移 |
-| 19 Guardrails | `.claude/hooks/` + `backend/app/security/` | 运行时护栏 |
-| 38 LLM Gateway | `gateway/envoy-ai-gateway/` | 模型控制面 |
-| 44 PreToolUse / PostToolUse | `.claude/hooks/*.sh` | 真实可跑的 hook |
-| 48 Risk Matrix | `security/` 整个目录 | 风险矩阵的可执行版 |
+| Context Stack | 这个 CLAUDE.md + DESIGN.md + WORKFLOW.md | L1/L2/L3 |
+| Reference Structure | `backend/app/` 五层目录 | 演示项目结构 |
+| Workflow Engineering | `WORKFLOW.md` | 阶段协议 |
+| Quality Shift Left | `backend/pyproject.toml` 里 ruff/mypy + tests/ | 质量左移 |
+| Guardrails | `.claude/hooks/` + `backend/app/security/` | 运行时护栏 |
+| AI Harness / Gateway Routing | `gateway/envoy-ai-gateway/` | 模型控制面 |
+| Claude Code（PreToolUse / PostToolUse hooks） | `.claude/hooks/*.sh` | 真实可跑的 hook |
+| Executable Risk Control / Redteam | `security/` 整个目录 | 风险矩阵的可执行版 |
 
 ## 风险与边界（AI 必须主动提醒人）
 
@@ -94,4 +98,4 @@ make redteam
 
 > "客户问'AI 怎么不会乱改代码'——你打开 CLAUDE.md 给他看：禁止事项、目录约定、必须执行项。
 > AI 不是被 prompt 约束，是被这份**工程契约**约束。
-> 这就是 Slide 7 说的'用 Context 让 AI 理解项目，用 Workflow 管住执行阶段'的具体落地。"
+> 这就是 PPT DEFINITION 页说的'用 Context 让 AI 理解项目，用 Workflow 管住执行阶段'的具体落地。"

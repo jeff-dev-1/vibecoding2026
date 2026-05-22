@@ -7,11 +7,17 @@ import {
   gatewayPrompts,
   guardrailTest,
   redteamReport,
+  supplyChainCheck,
+  supplyChainReport,
+  supplyChainSamples,
   type GatewayInfo,
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
   type RedteamReport,
+  type SupplyChainReport,
+  type SupplyChainSamples,
+  type SupplyChainVerdict,
 } from "@/lib/api";
 
 // AI Gateway 控制面 — 对应 PPT Slide 38:
@@ -26,7 +32,9 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
   const [info, setInfo] = useState<GatewayInfo | null>(null);
   const [prompts, setPrompts] = useState<GatewayPrompts | null>(null);
   const [redteam, setRedteam] = useState<RedteamReport | null>(null);
-  const [tab, setTab] = useState<"routing" | "guardrail" | "prompts" | "redteam">("routing");
+  const [tab, setTab] = useState<
+    "routing" | "guardrail" | "supply" | "prompts" | "redteam"
+  >("routing");
 
   useEffect(() => {
     gatewayInfo().then(setInfo).catch(() => {});
@@ -68,6 +76,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
         {[
           ["routing", "模型路由"],
           ["guardrail", "Guardrail"],
+          ["supply", "供应链 (Koi)"],
           ["prompts", "提示词管理"],
           ["redteam", "红队报告"],
         ].map(([id, label]) => (
@@ -185,6 +194,14 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
               提示词是软约束, Guardrail 是硬护栏 (PPT Slide 44)。试在 AI 助手里输入
               &quot;ignore previous instructions&quot; 看拦截。
             </p>
+          </div>
+        )}
+
+        {/* 供应链 (Koi): 本项目门禁报告 + 交互式查询台 */}
+        {tab === "supply" && (
+          <div className="space-y-4">
+            <ProjectSupplyReport />
+            <SupplyChainTester />
           </div>
         )}
 
@@ -411,6 +428,264 @@ function GuardrailTester() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const SC_STYLE: Record<string, { ring: string; label: string; hint: string }> = {
+  BLOCK: { ring: "bg-rose-50 text-rose-700 ring-rose-200", label: "BLOCK", hint: "→ 高危, 禁止安装" },
+  REQUEST_APPROVAL: { ring: "bg-amber-50 text-amber-700 ring-amber-200", label: "REQUEST-APPROVAL", hint: "→ 中危, 需人工审批" },
+  PASS: { ring: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "PASS", hint: "→ 低危, 放行" },
+};
+
+function ProjectSupplyReport() {
+  const [rep, setRep] = useState<SupplyChainReport | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    supplyChainReport().then(setRep).catch(() => {});
+  }, []);
+
+  if (!rep) return null;
+  if (rep.empty) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
+        暂无本项目供应链报告。运行 <code className="text-slate-600">make supply-scan</code> 或等 CI 门禁生成。
+      </div>
+    );
+  }
+  const pass = rep.gate === "pass";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+        <span className="text-sm font-semibold text-slate-700">📦 本项目供应链报告</span>
+        <span
+          className={clsx(
+            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+            pass ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600",
+          )}
+        >
+          {pass ? "✅ 门禁通过" : "⛔ 门禁未过"}
+        </span>
+        <span className="ml-auto text-[10px] text-slate-400">
+          {rep.koi_enabled ? "Koi 实时" : "离线兜底"}
+          {rep.created_at && ` · ${new Date(rep.created_at).toLocaleString("zh-CN")}`}
+        </span>
+      </div>
+      <div className="space-y-2 p-3">
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-700">PASS {rep.counts.PASS ?? 0}</span>
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-700">已审批 {rep.approved.length}</span>
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-700">待审批 {rep.needs_approval.length}</span>
+          <span className="rounded bg-rose-50 px-2 py-0.5 text-rose-700">BLOCK {rep.counts.BLOCK ?? 0}</span>
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-500">共 {rep.total}</span>
+        </div>
+        {rep.blocked.length > 0 && (
+          <div className="text-[11px] text-rose-600">⛔ 禁止: {rep.blocked.join(", ")}</div>
+        )}
+        {rep.needs_approval.length > 0 && (
+          <div className="text-[11px] text-amber-600">⏳ 待审批: {rep.needs_approval.join(", ")}</div>
+        )}
+        <button onClick={() => setOpen(!open)} className="text-[11px] text-indigo-600">
+          {open ? "收起" : `展开全部 ${rep.items.length} 个制品`}
+        </button>
+        {open && (
+          <div className="max-h-60 overflow-auto rounded border border-slate-100">
+            <table className="w-full text-[11px]">
+              <tbody>
+                {rep.items.map((it, i) => (
+                  <tr key={i} className="border-b border-slate-50">
+                    <td className="px-2 py-1 font-mono text-slate-600">
+                      {it.marketplace}/{it.item_id}
+                    </td>
+                    <td className="px-2 py-1">
+                      <span className={clsx("rounded px-1.5 py-0.5 text-[10px] ring-1", SC_STYLE[it.state]?.ring)}>
+                        {it.state === "REQUEST_APPROVAL" && it.approved ? "APPROVED" : SC_STYLE[it.state]?.label}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono text-slate-500">
+                      {it.risk != null ? `${it.risk.toFixed(1)} (${it.risk_level})` : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[11px] text-slate-400">
+          扫 backend pip + frontend npm + ai-tools.yaml(MCP/扩展)→ Koi 打分 → CI 门禁。
+          BLOCK 或未审批中风险 fail build;中风险经 approvals.yaml 审批后放行。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SupplyChainTester() {
+  const [meta, setMeta] = useState<SupplyChainSamples | null>(null);
+  const [marketplace, setMarketplace] = useState("pypi");
+  const [itemId, setItemId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<SupplyChainVerdict | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    supplyChainSamples()
+      .then((m) => {
+        setMeta(m);
+        if (m.marketplaces[0]) setMarketplace(m.marketplaces[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function run(mk?: string, id?: string) {
+    const m = mk ?? marketplace;
+    const i = (id ?? itemId).trim();
+    if (!i) return;
+    if (mk) setMarketplace(mk);
+    if (id) setItemId(id);
+    setBusy(true);
+    setErr(null);
+    try {
+      setRes(await supplyChainCheck({ marketplace: m, item_id: i }));
+    } catch (e) {
+      setRes(null);
+      setErr(e instanceof Error ? e.message : "请求失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const risk = res?.risk ?? null;
+  const pct = risk == null ? 0 : Math.round((risk / 10) * 100);
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">
+          🔎 交互式 Koidex 查询台 — 任意制品(扩展 / npm / pypi / HF 模型 / MCP server)即席查风险
+          {meta && (
+            <span
+              className={clsx(
+                "ml-2 rounded-full px-2 py-0.5 text-[10px]",
+                meta.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-200 text-slate-500",
+              )}
+            >
+              {meta.enabled ? "● Koi 已接入" : "○ 离线兜底"}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <select
+            value={marketplace}
+            onChange={(e) => setMarketplace(e.target.value)}
+            className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+          >
+            {(meta?.marketplaces ?? [{ id: "pypi", label: "PyPI" }]).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <input
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="制品 ID, 如 requests / upstash/context7"
+            className="flex-1 rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+          />
+          <button
+            onClick={() => run()}
+            disabled={busy}
+            className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            {busy ? "查询中…" : "检查"}
+          </button>
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {(meta?.samples ?? []).map((s) => (
+            <button
+              key={s.label}
+              onClick={() => run(s.marketplace, s.item_id)}
+              className="rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200 hover:text-slate-700"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs text-rose-600">
+          {err}
+        </div>
+      )}
+
+      {res && (
+        <div className={clsx("rounded-lg p-3 text-sm ring-1", SC_STYLE[res.state]?.ring)}>
+          <div className="flex items-center gap-2">
+            <span className="font-bold">{SC_STYLE[res.state]?.label}</span>
+            <span className="text-xs">{SC_STYLE[res.state]?.hint}</span>
+            <span
+              className={clsx(
+                "ml-auto rounded px-1.5 py-0.5 text-[10px]",
+                res.source === "koi" ? "bg-white/70 text-slate-600" : "bg-slate-200 text-slate-500",
+              )}
+            >
+              {res.source === "koi" ? "Koi 实时" : "离线兜底"}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            {res.item_display_name || res.item_id}
+            {res.version ? ` @ ${res.version}` : ""} · {res.marketplace}
+          </div>
+
+          {risk != null && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] text-slate-500">风险分</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/70">
+                <div
+                  className={clsx(
+                    "h-full rounded-full",
+                    risk >= 7 ? "bg-rose-500" : risk >= 4 ? "bg-amber-500" : "bg-emerald-500",
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="font-mono text-xs text-slate-600">
+                {risk.toFixed(1)}/10 {res.risk_level ? `(${res.risk_level})` : ""}
+              </span>
+            </div>
+          )}
+
+          {res.ai_risk_summary && (
+            <div className="mt-2 rounded bg-white/60 p-2 text-[11px] leading-relaxed text-slate-600">
+              {res.ai_risk_summary}
+            </div>
+          )}
+
+          {res.findings.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {res.findings.map((f, i) => (
+                <li key={i} className="rounded bg-white/60 p-1.5 text-[11px]">
+                  <span className="font-medium text-slate-700">{f.finding_name}</span>
+                  <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
+                    {f.severity}
+                  </span>
+                  {f.evidence && <div className="mt-0.5 text-slate-500">{f.evidence}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {res.note && <div className="mt-2 text-[11px] text-slate-400">{res.note}</div>}
+        </div>
+      )}
+
+      <p className="pt-1 text-[11px] text-slate-400">
+        模型面 Guardrail 拦<strong>坏请求</strong>; 供应链面拦<strong>坏软件</strong>。两道网关
+        一起,才覆盖 AI Native 的完整攻击面 (含 MCP server)。
+      </p>
     </div>
   );
 }

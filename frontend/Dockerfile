@@ -3,7 +3,9 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json ./
-RUN npm install --no-audit --no-fund
+# 用国内 npm 镜像加速 (CN-friendly); 海外构建可 --build-arg NPM_REGISTRY=https://registry.npmjs.org
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm install --no-audit --no-fund --registry=${NPM_REGISTRY}
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules

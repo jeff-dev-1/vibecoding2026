@@ -236,3 +236,77 @@ export type RedteamReport = {
 export async function redteamReport() {
   return _fetch<RedteamReport>("/gateway/redteam-report");
 }
+
+// ===== 供应链网关 (Koi) — Pattern A =====
+
+export type SupplyChainState = "BLOCK" | "REQUEST_APPROVAL" | "PASS";
+export type SupplyChainFinding = {
+  finding_name: string;
+  severity: string;
+  description: string;
+  evidence: string;
+};
+export type SupplyChainVerdict = {
+  marketplace: string;
+  item_id: string;
+  item_display_name?: string | null;
+  version?: string | null;
+  state: SupplyChainState;
+  risk?: number | null;
+  risk_level?: string | null;
+  ai_risk_summary?: string | null;
+  findings: SupplyChainFinding[];
+  source: "koi" | "offline";
+  note?: string | null;
+};
+export type SupplyChainSamples = {
+  enabled: boolean;
+  marketplaces: { id: string; label: string }[];
+  samples: { marketplace: string; item_id: string; label: string }[];
+};
+
+export async function supplyChainSamples() {
+  return _fetch<SupplyChainSamples>("/gateway/supply-chain/samples");
+}
+
+export async function supplyChainCheck(args: {
+  marketplace: string;
+  item_id: string;
+  version?: string;
+}) {
+  return _fetch<SupplyChainVerdict>("/gateway/supply-chain-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+}
+
+// 本项目供应链门禁报告 (make supply-scan / CI POST 上来的最近一次结果)
+export type SupplyChainReportItem = {
+  marketplace: string;
+  item_id: string;
+  state: SupplyChainState;
+  risk?: number | null;
+  risk_level?: string | null;
+  source: string;
+  approved: boolean;
+  findings_count: number;
+};
+export type SupplyChainReport = {
+  generated_at?: string | null;
+  gate: "pass" | "fail";
+  total: number;
+  counts: Record<string, number>;
+  blocked: string[];
+  needs_approval: string[];
+  approved: string[];
+  items: SupplyChainReportItem[];
+  koi_enabled: boolean;
+  created_at?: string | null;
+  empty?: boolean;
+  hint?: string;
+};
+
+export async function supplyChainReport() {
+  return _fetch<SupplyChainReport>("/gateway/supply-chain-report");
+}

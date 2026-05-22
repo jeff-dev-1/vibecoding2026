@@ -186,6 +186,67 @@ class GuardrailTestResponse(BaseModel):
     redacted_preview: str | None = None
 
 
+# ===== 供应链网关 (Koi) — Pattern A =====
+# 模型面 Guardrail 拦"坏请求"; 供应链面拦"坏软件"(扩展/包/模型/MCP server)。
+
+SupplyChainState = Literal["BLOCK", "REQUEST_APPROVAL", "PASS"]
+
+
+class SupplyChainFinding(BaseModel):
+    finding_name: str
+    severity: str = "info"
+    description: str = Field(default="", max_length=800)
+    evidence: str = Field(default="", max_length=400)
+
+
+class SupplyChainCheckRequest(BaseModel):
+    # marketplace 见 Koi 枚举: pypi/npm/hugging_face/github_mcp_registry/mcp_registry/vscode/...
+    marketplace: str = Field(..., min_length=1, max_length=60)
+    item_id: str = Field(..., min_length=1, max_length=200)
+    version: str | None = Field(default=None, max_length=60)
+
+
+class SupplyChainVerdict(BaseModel):
+    marketplace: str
+    item_id: str
+    item_display_name: str | None = None
+    version: str | None = None
+    state: SupplyChainState
+    risk: float | None = Field(default=None, description="0-10 数值风险分")
+    risk_level: str | None = Field(default=None, description="low/medium/high")
+    ai_risk_summary: str | None = Field(default=None, max_length=1200)
+    findings: list[SupplyChainFinding] = Field(default_factory=list, max_length=20)
+    # koi = Koi 实时裁定; offline = 断网/未配置时的本地兜底
+    source: Literal["koi", "offline"] = "koi"
+    note: str | None = Field(default=None, max_length=300)
+
+
+# 本项目供应链门禁报告 (make supply-scan / CI POST 进来, 页面只读展示)
+
+class SupplyChainReportItem(BaseModel):
+    marketplace: str
+    item_id: str
+    state: SupplyChainState
+    risk: float | None = None
+    risk_level: str | None = None
+    source: str = "koi"
+    approved: bool = False
+    findings_count: int = 0
+
+
+class SupplyChainReport(BaseModel):
+    generated_at: str | None = None
+    gate: Literal["pass", "fail"]
+    total: int
+    counts: dict[str, int] = Field(default_factory=dict)
+    blocked: list[str] = Field(default_factory=list)
+    needs_approval: list[str] = Field(default_factory=list)
+    approved: list[str] = Field(default_factory=list)
+    items: list[SupplyChainReportItem] = Field(default_factory=list, max_length=200)
+    koi_enabled: bool = True
+    created_at: str | None = None
+
+
 # ===== 红队报告 =====
 
 class RedteamCategory(BaseModel):

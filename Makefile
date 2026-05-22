@@ -1,9 +1,12 @@
-.PHONY: help demo down restart logs seed test redteam scan sbom ac check-gateway-only check-healthy clean
+.PHONY: help demo up down restart logs seed test redteam supply-scan scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend
 
 help:
 	@echo "Vibe Coding Demo — AI Log Analysis Platform"
 	@echo ""
-	@echo "  make demo           启动整套 (docker compose up -d --build)"
+	@echo "  make demo           启动整套 (首次/依赖变更用; docker compose up -d --build)"
+	@echo "  make up             启动但不重新构建 (代码没动时最快)"
+	@echo "  make rebuild-backend   只重建后端 (改了 backend/ 时用, 利用缓存秒级)"
+	@echo "  make rebuild-frontend  只重建前端 (改了 frontend/ 时用)"
 	@echo "  make down           停止并清理"
 	@echo "  make restart        重启 backend & frontend (不重启数据库)"
 	@echo "  make logs           跟踪所有服务日志"
@@ -11,6 +14,7 @@ help:
 	@echo ""
 	@echo "  make test           跑后端 pytest + 前端 vitest"
 	@echo "  make redteam        Promptfoo 红队"
+	@echo "  make supply-scan    扫本项目依赖+工具的供应链风险 (Koi 门禁; BLOCK/未审批中风险 → 非0退出)"
 	@echo "  make scan           Garak 深度 LLM 漏扫"
 	@echo "  make sbom           Trivy + Syft 依赖扫描"
 	@echo "  make ac             跑所有验收标准"
@@ -26,6 +30,16 @@ demo:
 	@echo ""
 	@echo "Waiting for services to become healthy..."
 	@$(MAKE) check-healthy
+
+up:
+	docker compose up -d
+	@$(MAKE) check-healthy
+
+rebuild-backend:
+	docker compose up -d --build backend
+
+rebuild-frontend:
+	docker compose up -d --build frontend
 
 down:
 	docker compose down
@@ -45,6 +59,9 @@ test:
 
 redteam:
 	python3 security/red-team/run.py
+
+supply-scan:
+	BACKEND_URL=$${BACKEND_URL:-http://localhost:8000} python3 security/supply-chain/scan.py
 
 scan:
 	docker run --rm --network=host \

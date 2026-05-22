@@ -1,0 +1,19 @@
+# 已审批的中风险制品 (REQUEST_APPROVAL) — 审批后允许继续, 不再 fail build
+#
+# 门禁策略:
+#   BLOCK            → 永远 fail build
+#   REQUEST_APPROVAL → 必须在本文件出现 (= 人工审批过) 才放行, 否则 fail build
+#   PASS             → 放行
+# 这样既不 fail-open, 又能演示"中风险需审批后可继续"。
+# 格式: marketplace + item_id + reason (审批理由, 留痕)。
+
+approved:
+  - marketplace: npm
+    item_id: next
+    reason: "Next.js 框架, medium 风险已评估可接受 (评审 2026-05-22)"
+  - marketplace: pypi
+    item_id: httpx
+    reason: "HTTP 客户端, medium(过期域名 finding) 已评估可接受 (评审 2026-05-22)"
+  - marketplace: cursor
+    item_id: anthropic.claude-code
+    reason: "团队批准的 AI 编码工具, medium 已评估 (评审 2026-05-22)"

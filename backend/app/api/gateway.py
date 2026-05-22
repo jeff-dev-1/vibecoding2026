@@ -16,8 +16,16 @@ from sqlalchemy import text
 from ..config import settings
 from ..db import SessionLocal
 from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
-from ..schemas import GuardrailTestRequest, GuardrailTestResponse, RedteamReport
+from ..schemas import (
+    GuardrailTestRequest,
+    GuardrailTestResponse,
+    RedteamReport,
+    SupplyChainCheckRequest,
+    SupplyChainReport,
+    SupplyChainVerdict,
+)
 from ..security.input_guard import check
+from ..security import supply_chain
 
 router = APIRouter()
 
@@ -122,6 +130,57 @@ async def get_redteam_report() -> RedteamReport | dict:
     data = json.loads(row.s)
     data["created_at"] = row.created_at.isoformat() if row.created_at else None
     return RedteamReport.model_validate(data)
+
+
+@router.post("/supply-chain-check", response_model=SupplyChainVerdict)
+async def supply_chain_check(req: SupplyChainCheckRequest) -> SupplyChainVerdict:
+    """供应链网关三态 — 装某个制品前先问 Koi 风险分。
+
+    模型面 Guardrail 拦"坏请求", 这里拦"坏软件"(扩展/包/模型/MCP server)。
+    BLOCK (高危) / REQUEST_APPROVAL (中危) / PASS (低危)。接真 Koi, 不可用走离线兜底。
+    """
+    return await supply_chain.check(req.marketplace, req.item_id, req.version)
+
+
+@router.get("/supply-chain/samples")
+async def supply_chain_samples() -> dict:
+    """前端供应链 tab 用: marketplace 下拉 + 一键演示样例。"""
+    return {
+        "enabled": settings.koi_enabled and bool(settings.koi_api_key),
+        "marketplaces": supply_chain.MARKETPLACES,
+        "samples": supply_chain.SAMPLES,
+    }
+
+
+@router.post("/supply-chain-report")
+async def post_supply_chain_report(report: SupplyChainReport) -> dict:
+    """make supply-scan / CI 门禁跑完把本项目扫描结果 POST 进来存储。"""
+    async with SessionLocal() as s:
+        await s.execute(
+            text("INSERT INTO supply_chain_reports (summary) VALUES (CAST(:s AS jsonb))"),
+            {"s": json.dumps(report.model_dump())},
+        )
+        await s.commit()
+    return {"ok": True}
+
+
+@router.get("/supply-chain-report")
+async def get_supply_chain_report() -> SupplyChainReport | dict:
+    """页面只读展示最近一次本项目供应链扫描。"""
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                text(
+                    "SELECT summary::text AS s, created_at FROM supply_chain_reports "
+                    "ORDER BY created_at DESC LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if not row:
+        return {"empty": True, "hint": "运行 make supply-scan 生成本项目供应链报告"}
+    data = json.loads(row.s)
+    data["created_at"] = row.created_at.isoformat() if row.created_at else None
+    return SupplyChainReport.model_validate(data)
 
 
 @router.get("/prompts")
