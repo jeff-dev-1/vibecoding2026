@@ -18,6 +18,7 @@
 - **Envoy AI Gateway**:DeepSeek / Qwen 双模型,按 `X-LLM-Backend` header 路由,业务代码不变
 - **Guardrail 三态**:Prompt 注入 `BLOCKED` / PII `REDACTED` / 正常 `PASS`,页面可现场测
 - **供应链安全(Koi)**:端点/供应链安全平台,demo 展示两个切片——① 控制面「交互式 Koidex 查询台」即席查任意制品(pip/npm/HF 模型/扩展/MCP server)风险;② **CI 供应链门禁**(`make supply-scan`)扫本项目依赖+工具,`BLOCK`/未审批中风险 fail build(模型面拦坏请求,供应链面拦坏软件;未配置走离线兜底,Koi 不可用 fail-safe 不放行)
+- **网关可切换 + 可观测**:`GATEWAY_PROVIDER=envoy|portkey` 一键切网关(业务代码不变,证明与网关解耦);控制面「可观测」tab 实时看每次 LLM 调用的延迟 / tokens / 估算成本
 - **红队报告**:`make redteam` 跑攻击集 → 各类通过率 + 漏网用例,Gateway 控制面展示
 - **登录门 + 控制面 UI**:密码登录、时间柱图、日志表、AI 助手抽屉、Gateway 控制面板
 

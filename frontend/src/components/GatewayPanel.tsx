@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   gatewayInfo,
+  gatewayObservability,
   gatewayPrompts,
   guardrailTest,
   redteamReport,
@@ -14,6 +15,7 @@ import {
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
+  type Observability,
   type RedteamReport,
   type SupplyChainReport,
   type SupplyChainSamples,
@@ -33,7 +35,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
   const [prompts, setPrompts] = useState<GatewayPrompts | null>(null);
   const [redteam, setRedteam] = useState<RedteamReport | null>(null);
   const [tab, setTab] = useState<
-    "routing" | "guardrail" | "supply" | "prompts" | "redteam"
+    "routing" | "guardrail" | "supply" | "observability" | "prompts" | "redteam"
   >("routing");
 
   useEffect(() => {
@@ -47,10 +49,17 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-base">🚪</span>
-          <span className="text-sm font-semibold text-slate-700">Envoy AI Gateway 控制面</span>
+          <span className="text-sm font-semibold text-slate-700">
+            {info?.gateway || "Envoy AI Gateway"} 控制面
+          </span>
           <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
             ● 在线
           </span>
+          {info?.provider && (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+              provider: {info.provider}
+            </span>
+          )}
         </div>
         {/* 当前模型快切 */}
         <div className="flex items-center gap-1.5 rounded-lg bg-slate-100 p-0.5">
@@ -77,6 +86,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
           ["routing", "模型路由"],
           ["guardrail", "Guardrail"],
           ["supply", "供应链 (Koi)"],
+          ["observability", "可观测"],
           ["prompts", "提示词管理"],
           ["redteam", "红队报告"],
         ].map(([id, label]) => (
@@ -204,6 +214,9 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
             <SupplyChainTester />
           </div>
         )}
+
+        {/* AI GW 可观测 */}
+        {tab === "observability" && <ObservabilityView />}
 
         {/* 提示词管理 */}
         {tab === "prompts" && prompts && (
@@ -437,6 +450,100 @@ const SC_STYLE: Record<string, { ring: string; label: string; hint: string }> = 
   REQUEST_APPROVAL: { ring: "bg-amber-50 text-amber-700 ring-amber-200", label: "REQUEST-APPROVAL", hint: "→ 中危, 需人工审批" },
   PASS: { ring: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "PASS", hint: "→ 低危, 放行" },
 };
+
+function ObservabilityView() {
+  const [obs, setObs] = useState<Observability | null>(null);
+
+  useEffect(() => {
+    const load = () => gatewayObservability().then(setObs).catch(() => {});
+    load();
+    const t = setInterval(load, 5000); // 5s 轮询, 现场能看请求实时累积
+    return () => clearInterval(t);
+  }, []);
+
+  if (!obs) return null;
+  if (obs.empty) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+        暂无调用数据。去 AI 助手发几条对话,这里会实时显示每次 LLM 调用的延迟 / tokens / 估算成本。
+        <div className="mt-1 text-[11px]">当前 provider:{obs.current_provider}</div>
+      </div>
+    );
+  }
+  const fmtCost = (c?: number) => `$${(c ?? 0).toFixed(4)}`;
+  return (
+    <div className="space-y-3">
+      {/* 概览卡片 */}
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          ["调用数", String(obs.total_calls ?? 0)],
+          ["总 tokens", String((obs.total_prompt_tokens ?? 0) + (obs.total_completion_tokens ?? 0))],
+          ["估算成本", fmtCost(obs.total_cost_usd)],
+          ["延迟 p50/p95", `${obs.latency_p50_ms ?? 0}/${obs.latency_p95_ms ?? 0}ms`],
+        ].map(([k, v]) => (
+          <div key={k} className="rounded-lg border border-slate-200 p-2.5">
+            <div className="text-[10px] text-slate-400">{k}</div>
+            <div className="mt-0.5 font-mono text-sm font-semibold text-slate-800">{v}</div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[11px] text-slate-400">
+        当前 provider:<span className="font-medium text-slate-600">{obs.current_provider}</span>
+        {" · "}最近 {obs.window} 次窗口 · 成本为估算量级(非账单)
+      </div>
+
+      {/* 按模型 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">按模型</div>
+        <div className="space-y-1">
+          {Object.entries(obs.by_model ?? {}).map(([m, s]) => (
+            <div key={m} className="flex items-center justify-between text-xs">
+              <span className="font-mono text-slate-700">{m}</span>
+              <span className="text-slate-500">
+                {s.calls} 次 · {s.tokens} tokens · {fmtCost(s.cost_usd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 最近调用 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">最近调用</div>
+        <div className="max-h-56 overflow-auto">
+          <table className="w-full text-[11px]">
+            <tbody>
+              {(obs.recent ?? []).map((c, i) => (
+                <tr key={i} className="border-b border-slate-50">
+                  <td className="py-1 text-slate-400">{new Date(c.ts * 1000).toLocaleTimeString("zh-CN")}</td>
+                  <td className="py-1 font-mono text-slate-600">{c.model}</td>
+                  <td className="py-1 text-slate-500">{c.backend}</td>
+                  <td className="py-1 text-right font-mono text-slate-500">
+                    {c.prompt_tokens}+{c.completion_tokens}tok
+                  </td>
+                  <td className="py-1 text-right font-mono text-slate-500">{c.latency_ms}ms</td>
+                  <td className="py-1 text-right font-mono text-slate-500">{fmtCost(c.cost_usd)}</td>
+                  <td className="py-1 text-right">
+                    {c.ok ? (
+                      <span className="text-emerald-600">ok</span>
+                    ) : (
+                      <span className="text-rose-600">err</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-slate-400">
+        每次 LLM 调用都过 Gateway → backend 在调用点采集延迟/tokens/成本(内存窗口,演示用;
+        生产可接 OTel → Grafana/Tempo,或切 Portkey 用其内置观测)。
+      </p>
+    </div>
+  );
+}
 
 function ProjectSupplyReport() {
   const [rep, setRep] = useState<SupplyChainReport | null>(null);

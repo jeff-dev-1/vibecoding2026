@@ -13,6 +13,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
+from .. import observability
 from ..config import settings
 from ..db import SessionLocal
 from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
@@ -45,10 +46,17 @@ async def guardrail_test(req: GuardrailTestRequest) -> GuardrailTestResponse:
     )
 
 
+@router.get("/observability")
+async def gateway_observability() -> dict:
+    """AI GW 可观测: 最近 LLM 调用 + 聚合 (调用数/tokens/估算成本/延迟分位)。"""
+    return observability.snapshot(settings.gateway_provider)
+
+
 @router.get("/info")
 async def gateway_info() -> dict:
     return {
-        "gateway": "Envoy AI Gateway",
+        "gateway": "Portkey (OSS)" if settings.gateway_provider == "portkey" else "Envoy AI Gateway",
+        "provider": settings.gateway_provider,
         "default_backend": settings.default_backend,
         "backends": [
             {

@@ -54,6 +54,16 @@ services:
       timeout: 3s
       retries: 20
 
+  # Portkey OSS 网关 (可切换的第二个网关); 默认不启:
+  #   docker compose --profile portkey up -d gateway-portkey
+  #   并在 .env 设 GATEWAY_PROVIDER=portkey + 重启 backend
+  gateway-portkey:
+    image: portkeyai/gateway:latest
+    container_name: alad-portkey
+    profiles: ["portkey"]
+    ports:
+      - "8787:8787"
+
   backend:
     build:
       context: ./backend
@@ -69,6 +79,12 @@ services:
       LLM_GATEWAY_URL: http://envoy-ai-gateway:8080
       LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-demo-key-not-secret}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      # 网关 provider 可切换: envoy (默认) | portkey
+      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-envoy}
+      PORTKEY_URL: ${PORTKEY_URL:-http://gateway-portkey:8787}
+      # portkey 路径下 backend 需自带 provider key 透传 (Envoy 路径不用)
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: backend
       EMBEDDING_MODEL: BAAI/bge-small-en-v1.5

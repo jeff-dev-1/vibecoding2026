@@ -121,6 +121,19 @@ Palo Alto Networks 收购)，不是"另一个网关"。本 demo 只展示它最�
 `KOI_ENABLED=false` → 完全不外调，走 `security/supply_chain.py` 本地样例库兜底(`source=offline`，
 不冒充实时数据)。对应 PPT 的 AI HARNESS 页 + TOOL LAYER 页。
 
+### 2.6 网关可切换 + 可观测
+
+**可切换**：`gateway/client.py` 按 `GATEWAY_PROVIDER` 选 base URL + header 风格——
+`envoy`（默认，inline 数据面，key 在网关注入，`X-LLM-Backend` 路由）或
+`portkey`（OSS 网关，`x-portkey-provider` + `custom-host`）。**业务代码一行不改**，翻个 env 就换网关。
+Portkey OSS 是无状态代理，backend 在该路径下自带 provider key 透传（Envoy 路径 backend 不持有 key）
+——这是两条路径的真实差异。启用：`docker compose --profile portkey up -d gateway-portkey` +
+`GATEWAY_PROVIDER=portkey` 重启 backend。
+
+**可观测**：`app/observability.py` 在 `client.py` 调用点采集每次调用（provider/backend/model/
+tokens/延迟/估算成本），内存窗口（最近 200）；`GET /gateway/observability` 出聚合；控制面「可观测」tab
+实时展示。生产可接 OTel→Grafana/Tempo（已有 OTel 埋点 + profile），或切 Portkey 用其内置观测。
+
 ## 3. 数据模型
 
 ```sql
