@@ -21,6 +21,7 @@ from ..schemas import (
     GuardrailTestResponse,
     RedteamReport,
     SupplyChainCheckRequest,
+    SupplyChainReport,
     SupplyChainVerdict,
 )
 from ..security.input_guard import check
@@ -149,6 +150,37 @@ async def supply_chain_samples() -> dict:
         "marketplaces": supply_chain.MARKETPLACES,
         "samples": supply_chain.SAMPLES,
     }
+
+
+@router.post("/supply-chain-report")
+async def post_supply_chain_report(report: SupplyChainReport) -> dict:
+    """make supply-scan / CI 门禁跑完把本项目扫描结果 POST 进来存储。"""
+    async with SessionLocal() as s:
+        await s.execute(
+            text("INSERT INTO supply_chain_reports (summary) VALUES (CAST(:s AS jsonb))"),
+            {"s": json.dumps(report.model_dump())},
+        )
+        await s.commit()
+    return {"ok": True}
+
+
+@router.get("/supply-chain-report")
+async def get_supply_chain_report() -> SupplyChainReport | dict:
+    """页面只读展示最近一次本项目供应链扫描。"""
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                text(
+                    "SELECT summary::text AS s, created_at FROM supply_chain_reports "
+                    "ORDER BY created_at DESC LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if not row:
+        return {"empty": True, "hint": "运行 make supply-scan 生成本项目供应链报告"}
+    data = json.loads(row.s)
+    data["created_at"] = row.created_at.isoformat() if row.created_at else None
+    return SupplyChainReport.model_validate(data)
 
 
 @router.get("/prompts")

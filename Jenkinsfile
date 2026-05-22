@@ -220,6 +220,24 @@ PYEOF
         }
       }
 
+      stage('Supply Chain Gate') {
+        container('tools') {
+          withCredentials([
+            usernamePassword(credentialsId: 'deploy-host-210', usernameVariable: 'DEPLOY_USER', passwordVariable: 'DEPLOY_PASS'),
+            string(credentialsId: 'deploy-host-210-ip', variable: 'DEPLOY_HOST'),
+          ]) {
+            sh """
+              for i in 1 2 3; do apk add --no-cache sshpass openssh-client && break || sleep 5; done
+              # 供应链门禁: 扫本项目依赖(pip/npm)+工具(MCP/扩展) → Koi 风险裁定。
+              # BLOCK 或 未审批的中风险 → scan.py 非0退出 → 本 stage fail → build fail。
+              # 中风险经 approvals.yaml 审批后放行 (演示"审批后可继续")。
+              sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST \\
+                "cd ${DEPLOY_PATH} && python3 security/supply-chain/scan.py"
+            """
+          }
+        }
+      }
+
       currentBuild.result = "SUCCESS"
     } catch (Exception e) {
       currentBuild.result = "FAILURE"

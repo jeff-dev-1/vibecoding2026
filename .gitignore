@@ -12,6 +12,7 @@ dist/
 security/red-team/reports/
 security/llm-scan/reports/
 security/deps/reports/
+security/supply-chain/reports/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

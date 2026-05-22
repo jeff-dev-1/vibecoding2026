@@ -1,0 +1,13 @@
+# 开发工具链样例 — 纳入本项目供应链扫描 (make supply-scan)
+#
+# 这些不是代码依赖, 而是"AI/开发者用的工具": MCP server、IDE 扩展。
+# 传统 SCA (Snyk/Dependabot) 扫不到这一层 —— 正是 Koi 的差异点。
+# 格式: 每项 marketplace + item_id (item_id 见 Koi 文档的 marketplace 标识规范)。
+
+tools:
+  - marketplace: github_mcp_registry
+    item_id: upstash/context7
+  - marketplace: vscode
+    item_id: ms-python.python
+  - marketplace: cursor
+    item_id: anthropic.claude-code

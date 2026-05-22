@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from .api import chat, gateway, logs
 from .config import settings
+from .db import ensure_tables
 from .db import ping as db_ping
 from .schemas import HealthResponse
 from .telemetry import init_telemetry
@@ -15,6 +16,7 @@ from .telemetry import init_telemetry
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_telemetry(app, service_name=settings.service_name, endpoint=settings.otel_endpoint)
+    await ensure_tables()
     yield
 
 
