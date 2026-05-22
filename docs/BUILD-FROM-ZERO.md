@@ -1,7 +1,8 @@
 # 从 0 到当前 demo — 学员逐步实操手册
 
-> 这是**学员真能照着走**的主交付物。跟着 14 步(Step 0-14),用 Claude Code 一步步把
+> 这是**学员真能照着走**的主交付物。跟着 15 步(Step 0-15),用 Claude Code 一步步把
 > 整个 AI Log Analysis Platform 搭出来,和 PPT v6 的 3 阶段结构一一对应。
+> Step 0-14 是原始 3 阶段;**Step 15 是后来加入的供应链安全增强(Koi)**。
 >
 > **这不是抄代码** —— 你是在"组织 AI 完成交付"。每步:把 Prompt 粘给 Claude Code →
 > 让它先给计划 → 再改文件 → 你跑验收命令确认。卡住了用"兜底"。
@@ -11,8 +12,8 @@
 - 每个 Prompt 都可**直接复制**给 Claude Code(在项目根目录的 `claude` 会话里)。
 - 每个 Prompt 都已内置一条铁律:**先给计划,我确认后再改文件,最后自己跑验收**。
 - **阶段 A(Step 0-6)**:有真实检查点 `tutorial-step-0..6`,卡住可 `git checkout`。
-- **阶段 B/C(Step 7-14)**:有检查点 `training-step-7..14`,卡住可 `git checkout training-step-N`
-  看该步累积快照;最终参考答案 = `main`(== training-step-14)。
+- **阶段 B/C(Step 7-15)**:有检查点 `training-step-7..15`,卡住可 `git checkout training-step-N`
+  看该步累积快照;最终参考答案 = `main`(== training-step-15)。
   > 注:`training-step-N` 是**累积参考快照**(走完第 N 步后项目该有的样子),
   > 因为后期能力是有机演进的,部分共享文件会"提前"带上后续步骤的代码(如 GatewayPanel
   > 在 step-8 就含红队 tab,但其后端端点 step-11/12 才接上)——不影响构建,点未接通的
@@ -46,6 +47,7 @@ PPT(Slide 25-33)用的是 **"Prompt N" 编号**,和本手册的 **Step / tag 编
 | Step 5 / `tutorial-step-5` | AI Debug | **Prompt 6** | 32 |
 | Step 6 / `tutorial-step-6` | Review | **Prompt 7** | 33 |
 | Step 7-14 / `training-step-7..14` | 阶段 B/C(Gateway/结构化/多格式/双模型/Guardrail/红队/登录/上线) | PPT Slide 35-40/44-45/54-55 | — |
+| Step 15 / `training-step-15` | 供应链安全(Koi 查询台 + CI 门禁)**后加增强** | (PPT 加分页:Harness/企业落地) | — |
 
 > 两个易混点:① PPT 的 Prompt 2/3/4 在本手册里**合并成一个 Step 3**(对应一个 tag);
 > ② PPT **没有 Prompt 5**(测试步无编号),所以 PPT 的 Prompt 6/7 比 Step 号大 1。
@@ -334,8 +336,8 @@ bash .claude/hooks/pre-tool-use-block-prod.sh <<<'{"tool_name":"Bash","tool_inpu
 - `git checkout tutorial-step-6`
 
 > ✅ **阶段 A 最终态 = `tutorial-step-6`**:基础 demo(已含 DeepSeek 单模型网关、自由文本分析、旧版 UI)。
-> 下面阶段 B/C **从这个状态继续增量**,检查点 `training-step-7..14`(`git checkout` 可看每步累积快照),
-> 最终 = `main`(== training-step-14)。
+> 下面阶段 B/C **从这个状态继续增量**,检查点 `training-step-7..15`(`git checkout` 可看每步累积快照),
+> 最终 = `main`(== training-step-15)。
 
 ---
 
@@ -663,10 +665,68 @@ curl -sk -o /dev/null -w "https /login -> %{http_code}\n" -H "Host: vibe-coding.
 
 ---
 
+## Step 15 · 供应链安全:Koi 查询台 + CI 门禁
+
+> **后加的增强**:Step 0-14 是原始 3 阶段;Step 15 在 `training-step-14` 之上加第二道治理——供应链安全。
+
+**对应 PPT**:暂无独立页(PPT 可作为 **Harness / 企业落地的加分页**讲:"模型面拦坏请求 + 供应链面拦坏软件")
+**起点**:Step 14 完成(`training-step-14`)
+**目标**:加供应链安全(Koi),两个切片:
+- **Pattern A**:交互式 Koidex 查询台(控制面 tab,即席查任意制品风险)
+- **Pattern B**:`make supply-scan` / CI `Supply Chain Gate`(扫本项目依赖+工具,门禁)
+
+### 粘给 Claude Code 的 Prompt
+```
+先给计划再改。先讲清两道治理的区别:
+  - Envoy AI Gateway = inline 模型数据面网关(每次 LLM 调用必经)
+  - Koi = 旁路供应链风险裁定(backend/CI 调它的 API 取裁定, 不在请求链路里)
+然后实现:
+A. gateway/koi_client.py:调 Koi Koidex risk-report(GET item_id+marketplace+version),
+   按 risk_level 映射三态 high→BLOCK / medium→REQUEST_APPROVAL / low→PASS;新制品先 fetch 再轮询。
+B. security/supply_chain.py:闸门编排——KOI_ENABLED=false 完全不外调走离线兜底;
+   enabled 但 Koi 不可用时 fail-safe 降级 REQUEST_APPROVAL(绝不 fail-open 放行)。
+C. POST/GET /gateway/supply-chain-check + /supply-chain/samples + /supply-chain-report;
+   db 启动幂等建表(已存在库免迁移)。
+D. 前端 Gateway 控制面新增「供应链 (Koi)」tab:交互式查询台 + 本项目供应链报告区。
+E. security/supply-chain/scan.py(stdlib, py3.6 兼容):扫 backend/Dockerfile(pip)+
+   frontend/package.json(npm)+ ai-tools.yaml(MCP/扩展)→ 调 backend → 门禁:
+   BLOCK/未审批中风险 fail build;中风险经 approvals.yaml 审批后放行。Makefile 加 supply-scan。
+F. 回归测试:disabled 不外调 / 三态映射 / enabled+不可用=REQUEST_APPROVAL / 空 KOI_API_BASE 不覆盖默认。
+约束:任何供应链查询走 gateway/koi_client.py;key 只进 .env(gitignore), 不进代码/仓库。
+```
+
+### 预期产出
+- `backend/app/gateway/koi_client.py`、`backend/app/security/supply_chain.py`、
+  `backend/app/api/gateway.py`(供应链端点)、`backend/tests/test_supply_chain.py`
+- `security/supply-chain/scan.py` / `ai-tools.yaml` / `approvals.yaml`、`Makefile`(supply-scan)
+- 前端 `GatewayPanel.tsx`(供应链 tab)+ `lib/api.ts`、`.env.example`(KOI_*)
+
+### 验收命令
+```bash
+cd backend && pytest -q                 # 全绿(含 4 个供应链回归测试)
+make supply-scan                        # 门禁结论 PASS, 退出码 0
+```
+UI 检查(Gateway 控制面 →「供应链 (Koi)」):
+- `pypi/requests` → **REQUEST_APPROVAL**,source=koi
+- `github_mcp_registry/upstash/context7` → **PASS**,source=koi
+- 「本项目供应链报告」**gate=pass**,3 个 medium(next / httpx / anthropic.claude-code)已审批
+
+### 人工检查点
+- `KOI_ENABLED=false` → 完全不外调,走离线兜底(source=offline)
+- Koi 不可用(改错 key)→ 降级 **REQUEST_APPROVAL**,**绝不** PASS(不 fail-open)
+- 把 `approvals.yaml` 某条注释掉 → `make supply-scan` 门禁 **FAIL**、退出码 1(证明门真的拦)
+- **不能出现**:把 Koi token 写进代码/仓库(只进 `.env`)
+
+### 兜底(`git checkout training-step-15`;或对照 main 的下列文件)
+- `backend/app/gateway/koi_client.py`、`backend/app/security/supply_chain.py`、`security/supply-chain/`、`frontend/src/components/GatewayPanel.tsx`
+
+---
+
 ## 完成 = 当前 demo 的样子
 
-走完 Step 0-14,你就从空目录搭出了:
+走完 Step 0-15,你就从空目录搭出了:
 nginx/apache/syslog 多格式解析 → RAG + structured generation → Envoy AI Gateway
-双模型路由 → Guardrail 三态 → 红队报告 → 登录门 → 公网/内网 HTTPS,
+双模型路由 → Guardrail 三态 → 红队报告 → 登录门 → 公网/内网 HTTPS →
+供应链安全(Koi 查询台 + CI 门禁),
 和 `main` 分支一致。卡在任何一步:阶段 A 用 `git checkout tutorial-step-N`,
-阶段 B/C 用 `git checkout training-step-N`(N=步号),最终态 = `main` = `training-step-14`。
+阶段 B/C 用 `git checkout training-step-N`(N=步号),最终态 = `main` = `training-step-15`。
