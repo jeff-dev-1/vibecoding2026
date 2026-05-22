@@ -40,6 +40,13 @@ demo 自带 `mock-llm`,`docker compose --profile mock up` 即可,无需任何 ke
 - Claude 订阅(Pro/Team)或 Anthropic API Key 之一
 - 没有也能听,但动手环节要能调用 Claude
 
+### 可选:Koi 供应链安全 Key(「供应链 (Koi)」tab + `make supply-scan`)
+供应链门禁默认走**离线兜底**(本地样例库,能演示三态但非实时)。想看**真实 Koi 评分**,自己申请一个:
+- 注册 **koi.ai / extensiontotal**,在控制台 **API / Settings** 里生成一个 API Key(Bearer)
+- 填进 `.env`:`KOI_ENABLED=true` + `KOI_API_KEY=<你自己的 key>`
+- **不填也能跑**(走离线兜底);**讲师现场演示用的是讲师自己的 key,不会下发**——你做实验请用自己的
+- key 只进 `.env`(已 gitignore),**切勿提交进仓库**
+
 ---
 
 ## 三、机器要求
@@ -72,6 +79,7 @@ docker pull nginx:1.27-alpine
 # 3. 配置 key(没有就跳过,用 mock)
 cp .env.example .env
 # 编辑 .env 填入 DEEPSEEK_API_KEY / QWEN_API_KEY
+# 想看真实供应链评分再填 KOI_ENABLED=true + KOI_API_KEY(自己申请;不填走离线兜底)
 
 # 4. 构建 + 启动(首次构建前端/后端镜像会下载依赖,几分钟)
 docker compose up -d --build
@@ -136,6 +144,7 @@ demo 会用这些端口,确保没被占:
 - [ ] Git 装好,能 clone 课程仓库
 - [ ] 编辑器(VS Code / Cursor)+ Claude Code CLI 装好
 - [ ] 准备好至少一个 LLM API Key(DeepSeek 或 Qwen),或确认用 mock 离线
+- [ ] (可选)想看真实供应链评分:自己申请 Koi key 填 `.env`;不填走离线兜底
 - [ ] 能调用 Claude(订阅或 API Key)做动手环节
 - [ ] 提前 `docker compose up -d --build` 跑通一次,验证步骤全绿
 - [ ] 磁盘留 10GB+,相关端口未被占用
