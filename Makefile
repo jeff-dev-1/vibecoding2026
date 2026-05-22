@@ -1,9 +1,12 @@
-.PHONY: help demo down restart logs seed test redteam scan sbom ac check-gateway-only check-healthy clean
+.PHONY: help demo up down restart logs seed test redteam scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend
 
 help:
 	@echo "Vibe Coding Demo — AI Log Analysis Platform"
 	@echo ""
-	@echo "  make demo           启动整套 (docker compose up -d --build)"
+	@echo "  make demo           启动整套 (首次/依赖变更用; docker compose up -d --build)"
+	@echo "  make up             启动但不重新构建 (代码没动时最快)"
+	@echo "  make rebuild-backend   只重建后端 (改了 backend/ 时用, 利用缓存秒级)"
+	@echo "  make rebuild-frontend  只重建前端 (改了 frontend/ 时用)"
 	@echo "  make down           停止并清理"
 	@echo "  make restart        重启 backend & frontend (不重启数据库)"
 	@echo "  make logs           跟踪所有服务日志"
@@ -26,6 +29,16 @@ demo:
 	@echo ""
 	@echo "Waiting for services to become healthy..."
 	@$(MAKE) check-healthy
+
+up:
+	docker compose up -d
+	@$(MAKE) check-healthy
+
+rebuild-backend:
+	docker compose up -d --build backend
+
+rebuild-frontend:
+	docker compose up -d --build frontend
 
 down:
 	docker compose down

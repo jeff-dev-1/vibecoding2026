@@ -68,8 +68,10 @@ podTemplate(label: label, containers: [
               # 镜像已 push 到 harbor, 本地不留
               docker image rm ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:${BUILD_NUMBER} ${REGISTRY}/${NAMESPACE}/${IMAGE_BACKEND}:latest || true
               docker image rm ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:${BUILD_NUMBER} ${REGISTRY}/${NAMESPACE}/${IMAGE_FRONTEND}:latest || true
-              docker builder prune -f || true
               docker image prune -f || true
+              # 保留构建缓存(限 10GB)以加速下次构建; 只在超量时回收, 不再每次清空
+              # (之前 docker builder prune -f 会清空缓存 -> 每次全量重装 pip/npm, 巨慢)
+              docker builder prune -f --keep-storage 10GB || true
             """
           }
         }
