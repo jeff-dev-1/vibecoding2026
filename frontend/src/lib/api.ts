@@ -280,3 +280,33 @@ export async function supplyChainCheck(args: {
     body: JSON.stringify(args),
   });
 }
+
+// 本项目供应链门禁报告 (make supply-scan / CI POST 上来的最近一次结果)
+export type SupplyChainReportItem = {
+  marketplace: string;
+  item_id: string;
+  state: SupplyChainState;
+  risk?: number | null;
+  risk_level?: string | null;
+  source: string;
+  approved: boolean;
+  findings_count: number;
+};
+export type SupplyChainReport = {
+  generated_at?: string | null;
+  gate: "pass" | "fail";
+  total: number;
+  counts: Record<string, number>;
+  blocked: string[];
+  needs_approval: string[];
+  approved: string[];
+  items: SupplyChainReportItem[];
+  koi_enabled: boolean;
+  created_at?: string | null;
+  empty?: boolean;
+  hint?: string;
+};
+
+export async function supplyChainReport() {
+  return _fetch<SupplyChainReport>("/gateway/supply-chain-report");
+}

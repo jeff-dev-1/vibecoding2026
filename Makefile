@@ -1,4 +1,4 @@
-.PHONY: help demo up down restart logs seed test redteam scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend
+.PHONY: help demo up down restart logs seed test redteam supply-scan scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend
 
 help:
 	@echo "Vibe Coding Demo — AI Log Analysis Platform"
@@ -14,6 +14,7 @@ help:
 	@echo ""
 	@echo "  make test           跑后端 pytest + 前端 vitest"
 	@echo "  make redteam        Promptfoo 红队"
+	@echo "  make supply-scan    扫本项目依赖+工具的供应链风险 (Koi 门禁; BLOCK/未审批中风险 → 非0退出)"
 	@echo "  make scan           Garak 深度 LLM 漏扫"
 	@echo "  make sbom           Trivy + Syft 依赖扫描"
 	@echo "  make ac             跑所有验收标准"
@@ -58,6 +59,9 @@ test:
 
 redteam:
 	python3 security/red-team/run.py
+
+supply-scan:
+	BACKEND_URL=$${BACKEND_URL:-http://localhost:8000} python3 security/supply-chain/scan.py
 
 scan:
 	docker run --rm --network=host \

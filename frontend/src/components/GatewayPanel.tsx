@@ -8,12 +8,14 @@ import {
   guardrailTest,
   redteamReport,
   supplyChainCheck,
+  supplyChainReport,
   supplyChainSamples,
   type GatewayInfo,
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
   type RedteamReport,
+  type SupplyChainReport,
   type SupplyChainSamples,
   type SupplyChainVerdict,
 } from "@/lib/api";
@@ -74,7 +76,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
         {[
           ["routing", "模型路由"],
           ["guardrail", "Guardrail"],
-          ["supply", "供应链网关"],
+          ["supply", "供应链 (Koi)"],
           ["prompts", "提示词管理"],
           ["redteam", "红队报告"],
         ].map(([id, label]) => (
@@ -195,8 +197,13 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
           </div>
         )}
 
-        {/* 供应链网关 (Koi) */}
-        {tab === "supply" && <SupplyChainTester />}
+        {/* 供应链 (Koi): 本项目门禁报告 + 交互式查询台 */}
+        {tab === "supply" && (
+          <div className="space-y-4">
+            <ProjectSupplyReport />
+            <SupplyChainTester />
+          </div>
+        )}
 
         {/* 提示词管理 */}
         {tab === "prompts" && prompts && (
@@ -431,6 +438,89 @@ const SC_STYLE: Record<string, { ring: string; label: string; hint: string }> = 
   PASS: { ring: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "PASS", hint: "→ 低危, 放行" },
 };
 
+function ProjectSupplyReport() {
+  const [rep, setRep] = useState<SupplyChainReport | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    supplyChainReport().then(setRep).catch(() => {});
+  }, []);
+
+  if (!rep) return null;
+  if (rep.empty) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
+        暂无本项目供应链报告。运行 <code className="text-slate-600">make supply-scan</code> 或等 CI 门禁生成。
+      </div>
+    );
+  }
+  const pass = rep.gate === "pass";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+        <span className="text-sm font-semibold text-slate-700">📦 本项目供应链报告</span>
+        <span
+          className={clsx(
+            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+            pass ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600",
+          )}
+        >
+          {pass ? "✅ 门禁通过" : "⛔ 门禁未过"}
+        </span>
+        <span className="ml-auto text-[10px] text-slate-400">
+          {rep.koi_enabled ? "Koi 实时" : "离线兜底"}
+          {rep.created_at && ` · ${new Date(rep.created_at).toLocaleString("zh-CN")}`}
+        </span>
+      </div>
+      <div className="space-y-2 p-3">
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-700">PASS {rep.counts.PASS ?? 0}</span>
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-700">已审批 {rep.approved.length}</span>
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-700">待审批 {rep.needs_approval.length}</span>
+          <span className="rounded bg-rose-50 px-2 py-0.5 text-rose-700">BLOCK {rep.counts.BLOCK ?? 0}</span>
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-500">共 {rep.total}</span>
+        </div>
+        {rep.blocked.length > 0 && (
+          <div className="text-[11px] text-rose-600">⛔ 禁止: {rep.blocked.join(", ")}</div>
+        )}
+        {rep.needs_approval.length > 0 && (
+          <div className="text-[11px] text-amber-600">⏳ 待审批: {rep.needs_approval.join(", ")}</div>
+        )}
+        <button onClick={() => setOpen(!open)} className="text-[11px] text-indigo-600">
+          {open ? "收起" : `展开全部 ${rep.items.length} 个制品`}
+        </button>
+        {open && (
+          <div className="max-h-60 overflow-auto rounded border border-slate-100">
+            <table className="w-full text-[11px]">
+              <tbody>
+                {rep.items.map((it, i) => (
+                  <tr key={i} className="border-b border-slate-50">
+                    <td className="px-2 py-1 font-mono text-slate-600">
+                      {it.marketplace}/{it.item_id}
+                    </td>
+                    <td className="px-2 py-1">
+                      <span className={clsx("rounded px-1.5 py-0.5 text-[10px] ring-1", SC_STYLE[it.state]?.ring)}>
+                        {it.state === "REQUEST_APPROVAL" && it.approved ? "APPROVED" : SC_STYLE[it.state]?.label}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono text-slate-500">
+                      {it.risk != null ? `${it.risk.toFixed(1)} (${it.risk_level})` : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[11px] text-slate-400">
+          扫 backend pip + frontend npm + ai-tools.yaml(MCP/扩展)→ Koi 打分 → CI 门禁。
+          BLOCK 或未审批中风险 fail build;中风险经 approvals.yaml 审批后放行。
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SupplyChainTester() {
   const [meta, setMeta] = useState<SupplyChainSamples | null>(null);
   const [marketplace, setMarketplace] = useState("pypi");
@@ -473,7 +563,7 @@ function SupplyChainTester() {
     <div className="space-y-2">
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-3">
         <div className="mb-2 text-xs font-medium text-slate-600">
-          🛡️ 装它之前先问 Koi — 扩展 / npm / pypi / HF 模型 / MCP server 的供应链风险
+          🔎 交互式 Koidex 查询台 — 任意制品(扩展 / npm / pypi / HF 模型 / MCP server)即席查风险
           {meta && (
             <span
               className={clsx(

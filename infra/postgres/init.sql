@@ -59,3 +59,11 @@ CREATE TABLE IF NOT EXISTS redteam_reports (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS redteam_reports_created_idx ON redteam_reports(created_at DESC);
+
+-- 本项目供应链门禁报告 (make supply-scan / CI POST 进来, 页面只读展示)
+CREATE TABLE IF NOT EXISTS supply_chain_reports (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  summary     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS supply_chain_reports_created_idx ON supply_chain_reports(created_at DESC);

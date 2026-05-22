@@ -221,6 +221,32 @@ class SupplyChainVerdict(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
+# 本项目供应链门禁报告 (make supply-scan / CI POST 进来, 页面只读展示)
+
+class SupplyChainReportItem(BaseModel):
+    marketplace: str
+    item_id: str
+    state: SupplyChainState
+    risk: float | None = None
+    risk_level: str | None = None
+    source: str = "koi"
+    approved: bool = False
+    findings_count: int = 0
+
+
+class SupplyChainReport(BaseModel):
+    generated_at: str | None = None
+    gate: Literal["pass", "fail"]
+    total: int
+    counts: dict[str, int] = Field(default_factory=dict)
+    blocked: list[str] = Field(default_factory=list)
+    needs_approval: list[str] = Field(default_factory=list)
+    approved: list[str] = Field(default_factory=list)
+    items: list[SupplyChainReportItem] = Field(default_factory=list, max_length=200)
+    koi_enabled: bool = True
+    created_at: str | None = None
+
+
 # ===== 红队报告 =====
 
 class RedteamCategory(BaseModel):

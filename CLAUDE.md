@@ -52,6 +52,8 @@ DO NOT add dependencies:
 DO NOT bypass:
   - 任何 LLM 调用必须走 app/gateway/client.py
   - 任何用户文本必须先过 app/security/input_guard.py
+  - 任何供应链风险查询走 app/gateway/koi_client.py
+    (Koi 是旁路 advisory 查询 + CI 门禁, 不是 inline 网关; 闸门编排在 app/security/supply_chain.py)
 ```
 
 ## 必须执行（before declaring done）
