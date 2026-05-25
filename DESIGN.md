@@ -134,6 +134,21 @@ Portkey OSS 是无状态代理，backend 在该路径下自带 provider key 透�
 tokens/延迟/估算成本），内存窗口（最近 200）；`GET /gateway/observability` 出聚合；控制面「可观测」tab
 实时展示。生产可接 OTel→Grafana/Tempo（已有 OTel 埋点 + profile），或切 Portkey 用其内置观测。
 
+### 2.7 四层安全：各管什么（不要互相替代）
+
+AI 应用上线前的安全是**四条独立链路**，覆盖不同攻击面。容易把它们混为一谈，这里钉清楚：
+
+| 层 | 管什么 | 工具 | 入口 | CI 行为 |
+|---|---|---|---|---|
+| 依赖供应链 | 用的包/工具/MCP/扩展有没有风险 | Koi + Trivy/Syft | `make supply-scan` / `sbom` | **门禁**（BLOCK/未审批中风险 → fail）|
+| 模型 baseline | 模型本身的漏洞水位 | NVIDIA Garak | `make scan` | 离线/每周 |
+| LLM 行为 | 注入/越狱/PII/工具滥用拦不拦得住 | Promptfoo + `run.py` | `make redteam` | report-only |
+| **运行时应用面 (DAST)** | **跑起来的 HTTP 面：header/注入/SSRF/CORS/TLS/已知 Web 漏洞** | **OWASP ZAP + Nuclei** | **`make pentest`** | **report-only**（先观察基线）|
+
+> 关键区分：**红队测的是 LLM 行为**（走 `/chat/query`），**pentest 测的是运行中的 Web 应用面**（走 HTTP）。
+> 两者互补，不替代——这是 Slide 48 风险矩阵从"写在 PPT"到"每次部署自动扫"的落地。
+> DAST runner（`security/pentest/run.py`）按可用性降级：ZAP→Nuclei→builtin 被动检查兜底（无 docker 也出真报告）。
+
 ## 3. 数据模型
 
 ```sql
@@ -166,6 +181,11 @@ CREATE TABLE analysis_jobs (
 );
 ```
 
+**安全报告表族**：`redteam_reports` / `supply_chain_reports` / `pentest_reports` 三张表同构
+（`{id UUID, summary JSONB, created_at TIMESTAMPTZ}`，各带 `created_at DESC` 索引）——CI/离线 runner
+POST 写入，UI 只读取最近一条展示。新增表走 additive（`infra/postgres/init.sql` + `db.py` 启动幂等兜底），
+不改已有表（CLAUDE.md 硬约束）。
+
 ## 4. API 契约
 
 | Method | Path | Body / Query | Returns |
@@ -174,6 +194,10 @@ CREATE TABLE analysis_jobs (
 | GET  | `/logs/jobs/{id}` | — | `{status, summary?, evidence?}` |
 | POST | `/chat/query` | `{question, top_k?=5}` | `{answer, citations[]}` |
 | GET  | `/health` | — | `{ok: true, gateway: bool, db: bool}` |
+| POST/GET | `/gateway/pentest-report` | `PentestReport` / — | 渗透测试报告写入 / 最近一条 |
+
+> 安全报告端点族同构：`/gateway/{redteam,supply-chain,pentest}-report`——POST 由 CI runner 写，
+> GET 供 UI「Gateway 控制面」对应 tab 只读展示。
 
 **所有 POST 请求体经过 `app/security/input_guard.py` 校验**——这是 Slide 19 的实现位。
 
@@ -181,7 +205,8 @@ CREATE TABLE analysis_jobs (
 
 | 维度 | 要求 | 验证方式 |
 |---|---|---|
-| 安全 | PII 不进模型；prompt injection 被拦截 | `make redteam` 通过率 ≥ 90% |
+| 安全 (行为) | PII 不进模型；prompt injection 被拦截 | `make redteam` 总体通过率 ≥ 85%（AC-10）；注入/PII 子类 ≥ 90%（AC-5/6）|
+| 安全 (运行时) | 运行中 HTTP 面无高危/中危 DAST 发现 | `make pentest`：0 High / 0 Medium（当前 report-only，未卡门）|
 | 可观测 | 每次 LLM 调用打 OTel span；token/latency 可查 | OTel Collector 日志 |
 | 成本 | 单次会话 token 上限 = 10k；超限 429 | Envoy rate-limit 配置 |
 | 性能 | RAG 检索 P95 < 500ms（mock-llm 下） | `pytest backend/tests/test_rag.py -k bench` |

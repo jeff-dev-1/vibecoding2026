@@ -238,6 +238,36 @@ export async function redteamReport() {
   return _fetch<RedteamReport>("/gateway/redteam-report");
 }
 
+// ===== 渗透测试 (DAST) — ZAP + Nuclei =====
+
+export type PentestFinding = {
+  name: string;
+  risk: "High" | "Medium" | "Low" | "Info";
+  source: string; // zap / nuclei / builtin
+  url?: string | null;
+  cwe?: string | null;
+  count: number;
+};
+
+export type PentestReport = {
+  target: string;
+  gate: "pass" | "fail";
+  total: number;
+  counts: Record<string, number>; // High/Medium/Low/Info
+  high: number;
+  medium: number;
+  findings: PentestFinding[];
+  tools: string[];
+  tool: string;
+  created_at?: string | null;
+  empty?: boolean;
+  hint?: string;
+};
+
+export async function pentestReport() {
+  return _fetch<PentestReport>("/gateway/pentest-report");
+}
+
 // ===== 供应链网关 (Koi) — Pattern A =====
 
 export type SupplyChainState = "BLOCK" | "REQUEST_APPROVAL" | "PASS";

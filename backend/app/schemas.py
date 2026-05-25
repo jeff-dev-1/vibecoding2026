@@ -273,6 +273,32 @@ class RedteamReport(BaseModel):
     created_at: str | None = None
 
 
+# ===== 渗透测试 (DAST) 报告 =====
+# 红队测的是 LLM 行为; pentest 测的是运行中的 HTTP 应用面 (header/注入/SSRF/CORS/TLS)。
+# 来源: OWASP ZAP baseline + Nuclei; 都不可用时 run.py 走 builtin 被动检查兜底。
+
+class PentestFinding(BaseModel):
+    name: str
+    risk: str  # High / Medium / Low / Info
+    source: str = "zap"  # zap / nuclei / builtin
+    url: str | None = None
+    cwe: str | None = None
+    count: int = 1
+
+
+class PentestReport(BaseModel):
+    target: str
+    gate: Literal["pass", "fail"]  # 0 High/Medium = pass; 当前 CI report-only, 不据此卡门
+    total: int
+    counts: dict[str, int] = Field(default_factory=dict)  # 按风险: High/Medium/Low/Info
+    high: int = 0
+    medium: int = 0
+    findings: list[PentestFinding] = Field(default_factory=list, max_length=200)
+    tools: list[str] = Field(default_factory=list)  # 实际跑了哪些扫描器
+    tool: str = "OWASP ZAP + Nuclei (DAST)"
+    created_at: str | None = None
+
+
 # ===== Health =====
 
 class HealthResponse(BaseModel):
