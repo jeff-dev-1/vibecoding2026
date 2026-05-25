@@ -73,19 +73,31 @@ def snapshot(current_provider: str) -> dict:
     by_model: dict[str, dict] = {}
     by_backend: dict[str, dict] = {}
     by_provider: dict[str, int] = {}
+    backend_lat: dict[str, list[int]] = {}
     tot_pt = tot_ct = 0
     tot_cost = 0.0
+    failed = blocked = 0
     for c in calls:
         tot_pt += c["prompt_tokens"]
         tot_ct += c["completion_tokens"]
         tot_cost += c["cost_usd"]
+        if not c.get("ok", True):
+            failed += 1
+        if c.get("guardrail"):  # 被网关 guardrail 拦截 (x-guardrail 头)
+            blocked += 1
         m = by_model.setdefault(c["model"], {"calls": 0, "tokens": 0, "cost_usd": 0.0})
         m["calls"] += 1
         m["tokens"] += c["prompt_tokens"] + c["completion_tokens"]
         m["cost_usd"] = round(m["cost_usd"] + c["cost_usd"], 6)
-        b = by_backend.setdefault(c["backend"], {"calls": 0})
+        b = by_backend.setdefault(c["backend"], {"calls": 0, "tokens": 0, "cost_usd": 0.0})
         b["calls"] += 1
+        b["tokens"] += c["prompt_tokens"] + c["completion_tokens"]
+        b["cost_usd"] = round(b["cost_usd"] + c["cost_usd"], 6)
+        backend_lat.setdefault(c["backend"], []).append(c["latency_ms"])
         by_provider[c["provider"]] = by_provider.get(c["provider"], 0) + 1
+    for _bk, _bl in backend_lat.items():  # 双路由对比: 每个 backend 的延迟分位
+        by_backend[_bk]["latency_p50_ms"] = _pct(_bl, 0.5)
+        by_backend[_bk]["latency_p95_ms"] = _pct(_bl, 0.95)
 
     recent = [
         {**c, "ts": c["ts"]} for c in list(reversed(calls))[:20]
@@ -94,6 +106,9 @@ def snapshot(current_provider: str) -> dict:
         "empty": False,
         "current_provider": current_provider,
         "total_calls": len(calls),
+        "failed_calls": failed,
+        "blocked_calls": blocked,
+        "error_rate": round(failed / len(calls), 4),
         "total_prompt_tokens": tot_pt,
         "total_completion_tokens": tot_ct,
         "total_cost_usd": round(tot_cost, 6),

@@ -604,6 +604,18 @@ function ObservabilityView() {
       <div className="text-[11px] text-slate-400">
         当前 provider:<span className="font-medium text-slate-600">{obs.current_provider}</span>
         {" · "}最近 {obs.window} 次窗口 · 成本为估算量级(非账单)
+        {" · "}
+        <span
+          className={clsx("font-medium", (obs.failed_calls ?? 0) > 0 ? "text-rose-600" : "text-emerald-600")}
+        >
+          错误率 {((obs.error_rate ?? 0) * 100).toFixed(1)}%
+        </span>
+        {(obs.failed_calls ?? 0) > 0 && (
+          <span className="text-slate-500"> ({obs.failed_calls} 失败)</span>
+        )}
+        {(obs.blocked_calls ?? 0) > 0 && (
+          <span className="text-amber-600"> · guardrail 拦截 {obs.blocked_calls}</span>
+        )}
       </div>
 
       {/* 按模型 */}
@@ -615,6 +627,22 @@ function ObservabilityView() {
               <span className="font-mono text-slate-700">{m}</span>
               <span className="text-slate-500">
                 {s.calls} 次 · {s.tokens} tokens · {fmtCost(s.cost_usd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 按 backend (双路由对比) */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">按 backend (路由对比)</div>
+        <div className="space-y-1">
+          {Object.entries(obs.by_backend ?? {}).map(([bk, s]) => (
+            <div key={bk} className="flex items-center justify-between text-xs">
+              <span className="font-mono text-slate-700">{bk}</span>
+              <span className="text-slate-500">
+                {s.calls} 次 · {s.tokens ?? 0} tokens · {fmtCost(s.cost_usd)} · p50/p95{" "}
+                {s.latency_p50_ms ?? 0}/{s.latency_p95_ms ?? 0}ms
               </span>
             </div>
           ))}

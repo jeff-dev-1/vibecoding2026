@@ -361,13 +361,19 @@ export type Observability = {
   hint?: string;
   current_provider: string;
   total_calls?: number;
+  failed_calls?: number;
+  blocked_calls?: number;
+  error_rate?: number;
   total_prompt_tokens?: number;
   total_completion_tokens?: number;
   total_cost_usd?: number;
   latency_p50_ms?: number;
   latency_p95_ms?: number;
   by_model?: Record<string, { calls: number; tokens: number; cost_usd: number }>;
-  by_backend?: Record<string, { calls: number }>;
+  by_backend?: Record<
+    string,
+    { calls: number; tokens?: number; cost_usd?: number; latency_p50_ms?: number; latency_p95_ms?: number }
+  >;
   by_provider?: Record<string, number>;
   recent?: ObsCall[];
   window?: number;
