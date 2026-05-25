@@ -17,3 +17,6 @@ approved:
   - marketplace: cursor
     item_id: anthropic.claude-code
     reason: "团队批准的 AI 编码工具, medium 已评估 (评审 2026-05-22)"
+  - marketplace: vscode
+    item_id: ms-python.python
+     reason: "VS Code 官方 Python 扩展, medium 已评估可接受 (评审 2026-05-25)"
