@@ -220,6 +220,25 @@ PYEOF
         }
       }
 
+      stage('Pentest (DAST)') {
+        container('tools') {
+          withCredentials([
+            usernamePassword(credentialsId: 'deploy-host-210', usernameVariable: 'DEPLOY_USER', passwordVariable: 'DEPLOY_PASS'),
+            string(credentialsId: 'deploy-host-210-ip', variable: 'DEPLOY_HOST'),
+          ]) {
+            sh """
+              for i in 1 2 3; do apk add --no-cache sshpass openssh-client && break || sleep 5; done
+              # 渗透测试 (DAST): 在部署机跑 ZAP baseline + Nuclei (docker, --network=host 可达 localhost),
+              # 扫真实运行的 backend HTTP 面, 结果 POST 进后端供页面展示。
+              # report-only — run.py 永远 0 退出, 不卡 build (DAST 有误报, 先观察基线)。
+              # 门禁化: 见 security/pentest/README.md (改 gate=='fail' 时非0退出)。
+              sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST \\
+                "cd ${DEPLOY_PATH} && TARGET_URL=http://localhost:${API_PORT} python3 security/pentest/run.py"
+            """
+          }
+        }
+      }
+
       stage('Supply Chain Gate') {
         container('tools') {
           withCredentials([

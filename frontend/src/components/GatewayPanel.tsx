@@ -7,6 +7,7 @@ import {
   gatewayObservability,
   gatewayPrompts,
   guardrailTest,
+  pentestReport,
   redteamReport,
   supplyChainCheck,
   supplyChainReport,
@@ -16,6 +17,7 @@ import {
   type GuardrailTestResult,
   type LLMBackend,
   type Observability,
+  type PentestReport,
   type RedteamReport,
   type SupplyChainReport,
   type SupplyChainSamples,
@@ -34,14 +36,16 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
   const [info, setInfo] = useState<GatewayInfo | null>(null);
   const [prompts, setPrompts] = useState<GatewayPrompts | null>(null);
   const [redteam, setRedteam] = useState<RedteamReport | null>(null);
+  const [pentest, setPentest] = useState<PentestReport | null>(null);
   const [tab, setTab] = useState<
-    "routing" | "guardrail" | "supply" | "observability" | "prompts" | "redteam"
+    "routing" | "guardrail" | "supply" | "observability" | "prompts" | "redteam" | "pentest"
   >("routing");
 
   useEffect(() => {
     gatewayInfo().then(setInfo).catch(() => {});
     gatewayPrompts().then(setPrompts).catch(() => {});
     redteamReport().then(setRedteam).catch(() => {});
+    pentestReport().then(setPentest).catch(() => {});
   }, []);
 
   return (
@@ -89,6 +93,7 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
           ["observability", "可观测"],
           ["prompts", "提示词管理"],
           ["redteam", "红队报告"],
+          ["pentest", "渗透测试"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -248,6 +253,9 @@ export function GatewayPanel({ backend, onBackendChange }: Props) {
 
         {/* 红队报告 */}
         {tab === "redteam" && <RedteamView report={redteam} />}
+
+        {/* 渗透测试 (DAST) */}
+        {tab === "pentest" && <PentestView report={pentest} />}
       </div>
     </div>
   );
@@ -341,6 +349,112 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// 渗透测试 (DAST) — ZAP + Nuclei: 测运行中的 HTTP 应用面 (red team 测的是 LLM 行为)
+const RISK_BAR: Record<string, string> = {
+  High: "bg-rose-500",
+  Medium: "bg-amber-500",
+  Low: "bg-sky-500",
+  Info: "bg-slate-400",
+};
+const RISK_CHIP: Record<string, string> = {
+  High: "bg-rose-100 text-rose-700",
+  Medium: "bg-amber-100 text-amber-700",
+  Low: "bg-sky-100 text-sky-700",
+  Info: "bg-slate-100 text-slate-500",
+};
+const RISK_ORDER = ["High", "Medium", "Low", "Info"];
+
+function PentestView({ report }: { report: PentestReport | null }) {
+  if (!report || report.empty) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+        暂无渗透测试报告。CI/离线运行 <code className="text-slate-600">make pentest</code> 生成
+        (ZAP + Nuclei，无 docker 走 builtin 兜底)。
+      </div>
+    );
+  }
+  const meet = report.high === 0 && report.medium === 0;
+  const maxCount = Math.max(1, ...RISK_ORDER.map((r) => report.counts[r] || 0));
+  return (
+    <div className="space-y-3">
+      {/* 总览 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs text-slate-500">
+            DAST 风险总览 · 目标 <code className="text-slate-600">{report.target}</code>
+          </span>
+          <span className={clsx("text-xs font-medium", meet ? "text-emerald-600" : "text-rose-600")}>
+            {meet ? "✅ 达标 (0 High/Medium)" : `⚠️ ${report.high} High · ${report.medium} Medium`}
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {RISK_ORDER.map((r) => (
+            <div key={r} className="rounded-md bg-slate-50 p-2 text-center">
+              <div className={clsx("text-lg font-semibold", r === "High" ? "text-rose-600" : r === "Medium" ? "text-amber-600" : "text-slate-700")}>
+                {report.counts[r] || 0}
+              </div>
+              <div className="text-[10px] text-slate-500">{r}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 text-[11px] text-slate-400">
+          共 {report.total} 项 · 扫描器: {report.tools.join(", ") || "—"} · {report.tool}
+          {report.created_at && ` · ${new Date(report.created_at).toLocaleString("zh-CN")}`}
+        </div>
+      </div>
+
+      {/* 按风险分级条形 */}
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-600">按风险等级</div>
+        <div className="space-y-2">
+          {RISK_ORDER.map((r) => {
+            const n = report.counts[r] || 0;
+            return (
+              <div key={r} className="flex items-center gap-2 text-xs">
+                <span className="w-14 text-slate-600">{r}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div className={clsx("h-full rounded-full", RISK_BAR[r])} style={{ width: `${(n / maxCount) * 100}%` }} />
+                </div>
+                <span className="w-8 text-right font-mono text-slate-500">{n}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 发现列表 (High/Medium 优先) */}
+      {report.findings.length > 0 && (
+        <div className="rounded-lg border border-slate-200 p-3">
+          <div className="mb-2 text-xs font-medium text-slate-600">
+            发现明细 ({report.findings.length})
+          </div>
+          <ul className="space-y-1.5">
+            {report.findings.map((f, i) => (
+              <li key={i} className="text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className={clsx("rounded px-1 text-[10px] font-medium", RISK_CHIP[f.risk])}>
+                    {f.risk}
+                  </span>
+                  <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">{f.source}</span>
+                  {f.cwe && <span className="text-[10px] text-slate-400">{f.cwe}</span>}
+                  {f.count > 1 && <span className="text-[10px] text-slate-400">×{f.count}</span>}
+                </div>
+                <div className="text-slate-700">{f.name}</div>
+                {f.url && <div className="font-mono text-[10px] text-slate-400 break-all">{f.url}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-[11px] text-slate-500">
+        红队测 LLM 行为，渗透测试测运行时 Web 面 — 二者互补 (Slide 48 风险矩阵"运行时"列)。
+        当前 report-only，不卡 CI。
+      </p>
     </div>
   );
 }

@@ -41,6 +41,13 @@ async def ensure_tables() -> None:
            )""",
         "CREATE INDEX IF NOT EXISTS supply_chain_reports_created_idx "
         "ON supply_chain_reports(created_at DESC)",
+        """CREATE TABLE IF NOT EXISTS pentest_reports (
+             id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+             summary     JSONB NOT NULL,
+             created_at  TIMESTAMPTZ DEFAULT now()
+           )""",
+        "CREATE INDEX IF NOT EXISTS pentest_reports_created_idx "
+        "ON pentest_reports(created_at DESC)",
     )
     try:
         async with engine.begin() as conn:

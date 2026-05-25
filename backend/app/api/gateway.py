@@ -20,6 +20,7 @@ from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
 from ..schemas import (
     GuardrailTestRequest,
     GuardrailTestResponse,
+    PentestReport,
     RedteamReport,
     SupplyChainCheckRequest,
     SupplyChainReport,
@@ -189,6 +190,37 @@ async def get_supply_chain_report() -> SupplyChainReport | dict:
     data = json.loads(row.s)
     data["created_at"] = row.created_at.isoformat() if row.created_at else None
     return SupplyChainReport.model_validate(data)
+
+
+@router.post("/pentest-report")
+async def post_pentest_report(report: PentestReport) -> dict:
+    """渗透测试 runner (make pentest / CI) 跑完把 DAST 结果 POST 进来存储。"""
+    async with SessionLocal() as s:
+        await s.execute(
+            text("INSERT INTO pentest_reports (summary) VALUES (CAST(:s AS jsonb))"),
+            {"s": json.dumps(report.model_dump())},
+        )
+        await s.commit()
+    return {"ok": True}
+
+
+@router.get("/pentest-report")
+async def get_pentest_report() -> PentestReport | dict:
+    """页面只读展示最近一次渗透测试报告。"""
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                text(
+                    "SELECT summary::text AS s, created_at FROM pentest_reports "
+                    "ORDER BY created_at DESC LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if not row:
+        return {"empty": True, "hint": "运行 make pentest 生成渗透测试报告"}
+    data = json.loads(row.s)
+    data["created_at"] = row.created_at.isoformat() if row.created_at else None
+    return PentestReport.model_validate(data)
 
 
 @router.get("/prompts")
