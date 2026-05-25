@@ -15,12 +15,19 @@ GuardVerdict = Literal["pass", "redact", "block"]
 
 
 _INJECTION_PATTERNS = [
+    # 英文
     re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I),
     re.compile(r"disregard\s+the\s+above", re.I),
     re.compile(r"you\s+are\s+now\s+(dan|developer\s+mode)", re.I),
     re.compile(r"</?(system|admin|root)>", re.I),
     re.compile(r"<\|im_start\|>system", re.I),
     re.compile(r"###\s*system\s*:", re.I),
+    # 中文常见越狱 (字面匹配; 拆字/编码/拼音仍会漏 → 见前端"反面教材"与 ML guard)
+    re.compile(r"你现在是\s*dan", re.I),
+    re.compile(r"(没有|无)任何限制|不受任何?限制", re.I),
+    re.compile(r"(输出|泄露|打印|告诉我|显示).{0,8}系统提示", re.I),
+    re.compile(r"忽略.{0,6}(之前|以上|前面|上面|所有).{0,6}(指令|提示|要求|限制)", re.I),
+    re.compile(r"越狱|开发者模式|绕过.{0,4}(安全|限制|规则|防护|护栏)", re.I),
 ]
 
 _PII_PATTERNS = [
