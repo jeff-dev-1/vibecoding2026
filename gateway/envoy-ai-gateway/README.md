@@ -17,7 +17,7 @@
 | AI Gateway 能力 | docker-compose 模拟 | 生产对应 |
 |---|---|---|
 | API Key 鉴权 | Lua filter 解析 Bearer | `BackendSecurityPolicy` |
-| Prompt Injection 拦截 | Lua filter 关键词黑名单 | `AIGatewayGuardrail` (PromptInjection rule) |
+| Prompt Injection 拦截 | Lua filter 关键词黑名单（覆盖中英文越狱/注入词，如 `ignore previous` / `越狱` / `系统提示词`）| `AIGatewayGuardrail` (PromptInjection rule) |
 | PII 检测 | Lua filter 正则 | `AIGatewayGuardrail` (PII rule) |
 | Rate Limit | `local_ratelimit` filter | `BackendTrafficPolicy.rateLimit` |
 | 多模型路由 | 暂未实现（mock-llm 唯一上游） | `AIGatewayRoute.rules` |

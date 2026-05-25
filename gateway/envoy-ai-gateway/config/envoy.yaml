@@ -90,7 +90,14 @@ static_resources:
                                 "ignore all previous",
                                 "disregard the above",
                                 "you are now dan",
-                                "system prompt:"
+                                "system prompt:",
+                                "没有任何限制",
+                                "系统提示词",
+                                "输出系统提示",
+                                "忽略以上",
+                                "忽略之前",
+                                "越狱",
+                                "开发者模式"
                               }
                               for _, p in ipairs(injection_patterns) do
                                 if string.find(lowered, p, 1, true) then
