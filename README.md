@@ -19,6 +19,7 @@
 - **Guardrail 三态**:Prompt 注入 `BLOCKED` / PII `REDACTED` / 正常 `PASS`,页面可现场测
 - **供应链安全(Koi)**:端点/供应链安全平台,demo 展示两个切片——① 控制面「交互式 Koidex 查询台」即席查任意制品(pip/npm/HF 模型/扩展/MCP server)风险;② **CI 供应链门禁**(`make supply-scan`)扫本项目依赖+工具,`BLOCK`/未审批中风险 fail build(模型面拦坏请求,供应链面拦坏软件;未配置走离线兜底,Koi 不可用 fail-safe 不放行)
 - **红队报告**:`make redteam` 跑攻击集 → 各类通过率 + 漏网用例,Gateway 控制面展示
+- **渗透测试(DAST)**:`make pentest` 用 OWASP ZAP + Nuclei 扫运行中的 HTTP 应用面(缺安全头 / 注入 / SSRF / CORS / 已知 Web 漏洞),无 docker 走 builtin 被动检查兜底;结果在 Gateway 控制面「渗透测试」tab(红队测 LLM 行为,pentest 测运行时 Web 面,互补)
 - **登录门 + 控制面 UI**:密码登录、时间柱图、日志表、AI 助手抽屉、Gateway 控制面板
 
 技术栈:FastAPI · Next.js 14 · Postgres+pgvector · Envoy AI Gateway · docker-compose。
@@ -43,6 +44,7 @@ curl localhost:8090/health        # Envoy AI Gateway
 make seed            # 喂示例日志(testdata/ 里有 nginx/apache/syslog 三份)
 make redteam         # 跑红队,结果在 Gateway 控制面"红队报告" tab
 make supply-scan     # 供应链门禁:扫本项目依赖+工具→Koi 风险,结果在"供应链 (Koi)" tab
+make pentest         # 渗透测试 DAST:ZAP+Nuclei 扫运行时 Web 面,结果在"渗透测试" tab
 make down            # 收摊
 ```
 
@@ -88,7 +90,7 @@ Claude Code,让它先给计划→改文件→你跑验收。卡住了用检查�
 ├── gateway/envoy-ai-gateway/             ← Envoy 配置(本地可跑 + 生产 K8s CRD 模板)+ mock-llm 上游
 ├── gateway/portkey/                      ← Portkey 对比页(为什么自托管 Gateway)
 ├── infra/                                ← postgres init.sql · OTel(可选) · tls(内网 HTTPS)
-├── security/                             ← 红队 run.py + 攻击集 · Garak · Trivy/SBOM
+├── security/                             ← 红队 · pentest(ZAP/Nuclei DAST)· Garak · Trivy/SBOM
 ├── .claude/                              ← hooks(运行时护栏)+ subagents(reviewer/tester/architect)
 ├── evaluation/ · scripts/ · testdata/    ← golden dataset · seed/inject-bug/redteam · 样本日志
 └── docs/                                 ← 见下"文档索引"
