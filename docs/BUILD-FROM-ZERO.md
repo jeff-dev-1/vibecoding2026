@@ -69,36 +69,61 @@ PPT(Slide 25-33)用的是 **"Prompt N" 编号**,和本手册的 **Step / tag 编
 你是我的架构助手。我要做一个培训用 demo:AI Log Analysis Platform——
 上传 Nginx/Apache/syslog 日志,AI 总结异常,自然语言查询,输出可解释证据。
 
-先不要写任何业务代码。请先输出"计划"(要建哪些文件、每个文件写什么),
+先不要写任何业务代码,也不要生成 docker-compose / Envoy 配置 / SQL
+(那些留到后面的项目骨架步)。请先输出"计划"(要建哪些文件、每个文件写什么),
 我确认后再生成,最后告诉我怎么验收。
 
 技术栈(写进契约,后续不要换):
 - Backend: Python 3.11 + FastAPI + Pydantic v2
 - Frontend: Next.js 14 (App Router) + Tailwind
 - Vector: Postgres 16 + pgvector
-- LLM 接入: 必须经过 Envoy AI Gateway,禁止业务代码直连 OpenAI/Anthropic
+- LLM 接入: 业务代码只认 Envoy AI Gateway 统一 endpoint,经 model 名路由到
+  DeepSeek + Qwen 两个 upstream;代码层 provider 无关,禁止直连任何 LLM SDK / 厂商 API。
+- Embedding: 用【本地】sentence-transformers(BAAI/bge-small-en-v1.5,384 维),
+  【不走】Envoy;离线时用确定性 hash 向量兜底。pgvector 列固定 vector(384)。
+  注意:本地 embedding 不是外部 provider 调用,所以不走网关【不违反】"唯一 LLM 出口=Envoy"红线;
+  红线只约束 DeepSeek/Qwen 这类外呼。
 - 编排: docker-compose v2
 
-请生成:
-1. CLAUDE.md —— 项目记忆:身份/技术栈/目录约定(backend 分 api/services/agents/
-   security/gateway 五层)/禁止事项(禁改 .env、禁直连 LLM SDK、禁删表)/必须执行(lint+测试)
-2. DESIGN.md —— 架构约束:架构图、API 契约表、数据模型
+请只生成这 5 个文件(都不含业务代码):
+1. CLAUDE.md —— 项目记忆:身份/技术栈(LLM 行=Envoy→DeepSeek/Qwen 多 upstream、model 路由;
+   Vector 行=pgvector + 本地 384 维 embedding)/目录约定(backend 分 api/services/agents/
+   security/gateway 五层)/禁止事项(禁改 .env、禁直连外部 LLM SDK/API、禁删表;
+   本地 embedding 除外)/必须执行(lint+测试)
+2. DESIGN.md —— 架构约束:架构图(网关后画 DeepSeek + Qwen 两个 upstream)、
+   API 契约表【用这四个真实端点,不要自创 /ingest /summary /query】:
+     POST /logs/upload(→job_id 异步)、GET /logs/jobs/{id}、GET /logs(最近N倒序)、
+     POST /chat/query(经网关调 LLM);标注 /chat/query 与 analyzer 经 gateway,/logs/* 不直连 LLM、
+   数据模型(log_chunks.embedding vector(384))
 3. WORKFLOW.md —— 阶段协议:/refine /design /plan /build /review /ship 各阶段输入输出通过条件
 4. README.md —— 给人看的入口
+5. .env.example —— 占位:DEEPSEEK_API_KEY、QWEN_API_KEY、AI_GATEWAY_URL、
+   EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ```
 
+### 🎓 讲师决策卡 — AI 会让你拍板的点 + 标准答复
+
+| AI 可能问 | 标准答复 | 为什么(对齐真实 demo) |
+|---|---|---|
+| **A:只出 4 份文档** / **B:文档 + 骨架(compose/Envoy/SQL)一起出** | **选 A** | Step 0 只锁契约;骨架是 **Step 2** 的产物。步界清晰,兜底 tag 才对得上 |
+| 文档语言:全中文 / 中英混排 | **全中文** | 和真实 demo 文档口径一致 |
+| (若它没主动加)embedding 怎么接 | **本地 sentence-transformers,384 维,不走 Envoy** | demo 故意取舍:少一次外呼、可离线;红线只管 DeepSeek/Qwen 外呼 |
+
 ### 预期产出
-- `CLAUDE.md` / `DESIGN.md` / `WORKFLOW.md` / `README.md`
+- `CLAUDE.md` / `DESIGN.md` / `WORKFLOW.md` / `README.md` / `.env.example`
 - 无业务代码
 
 ### 验收命令
 ```bash
-ls *.md && grep -c "禁止" CLAUDE.md
+ls *.md .env.example && grep -c "禁止" CLAUDE.md
 ```
 
-### 人工检查点
-- CLAUDE.md 里**必须有**:目录约定(五层)、禁止事项、必须执行项
-- **不能出现**:任何 .py / docker-compose(这步只写契约)
+### 🔍 完成核验(逐条勾,抓漂移)
+- [ ] **DESIGN.md 的 API 契约表是 `/logs/upload`·`/logs/jobs/{id}`·`/logs`·`/chat/query`** —— 不是 AI 自创的 `/ingest`·`/summary`·`/query`(这条错了会拖到核心实现步爆雷)
+- [ ] CLAUDE.md:五层目录、三禁止、"本地 embedding 除外"、lint+测试 都在
+- [ ] CLAUDE.md/DESIGN.md 的 LLM 行体现 **DeepSeek + Qwen 双 upstream**;embedding 标注 **本地 384、不走网关**
+- [ ] `.env.example` 5 个占位齐(含 `EMBEDDING_MODEL`),key 值为空
+- [ ] **没有**任何 .py / docker-compose / .sql(这步只写文档):`git status --short` 只见 md + .env.example
 
 ### 兜底
 - `git checkout tutorial-step-0`
@@ -135,6 +160,11 @@ sed -n '/验收标准/,/风险/p' docs/PRD.md
 - 验收标准每条都"可观察"(如"上传 1000 行日志 30 秒内出结果"),不是主观词
 - 有"待确认问题"(说明 AI 知道自己不知道什么)
 
+### 🔍 完成核验
+- [ ] 生成了 `docs/PRD.md`,**仍无业务代码**
+- [ ] 验收标准每条**可观察**,不是"流畅/友好"这种主观词
+- [ ] PRD 里若出现端点/表名,**和 Step 0 的 DESIGN.md 一致**(别让它在 PRD 里又编一套)
+
 ### 兜底
 - `git checkout tutorial-step-1`
 
@@ -156,10 +186,27 @@ sed -n '/验收标准/,/风险/p' docs/PRD.md
   + envoy-ai-gateway + mock-llm(profile=mock,默认不启)
 - backend 五层目录 + Dockerfile + pyproject.toml
 - frontend Next.js 骨架 + Dockerfile
-- infra/postgres/init.sql:logs / log_chunks(vector 384)/ analysis_jobs 三表 + pgvector 扩展
+- infra/postgres/init.sql:CREATE EXTENSION vector + pgcrypto,严格按下面这三张表(列名/类型照抄,不要自创):
+  logs(id UUID PK, source TEXT CHECK source IN('nginx','app','custom'), raw TEXT, byte_size INT, uploaded_at TIMESTAMPTZ)
+  log_chunks(id UUID PK, log_id UUID→logs(id) ON DELETE CASCADE, chunk_idx INT, line_start INT, line_end INT,
+             text TEXT, embedding vector(384), created_at TIMESTAMPTZ, UNIQUE(log_id,chunk_idx)) + ivfflat 余弦索引
+  analysis_jobs(id UUID PK, log_id UUID→logs(id) ON DELETE CASCADE,
+             status TEXT CHECK status IN('pending','running','done','failed'),
+             summary TEXT, evidence JSONB, sample_entries JSONB, error TEXT,
+             created_at TIMESTAMPTZ, finished_at TIMESTAMPTZ)
+  禁止:自创 evidence_ids/anomalies 列、status 用 ok/gateway_unavailable、embedding 降维或加 NOT NULL。
 - Makefile:demo / down / seed / test 目标
 - 不要把逻辑塞进一个大文件;严格按五层目录
 ```
+
+### 🎓 讲师决策卡 — AI 会让你拍板的点 + 标准答复
+
+| AI 可能问 | 标准答复 | 为什么(对齐真实 demo) |
+|---|---|---|
+| **表名冲突**:init.sql 用 `logs/log_chunks/analysis_jobs`,但 DESIGN.md 写的是 `log_files/analyses/query_logs` | **以 init.sql 这三张为准**,回填 DESIGN.md | demo 真实三表就是 `logs` / `log_chunks` / `analysis_jobs` |
+| `analysis_jobs` 做**异步 job**(带 status)还是**同步审计表** | **异步 job**:`status CHECK IN('pending','running','done','failed')` + `summary/evidence/sample_entries` | demo 就是 upload 秒返回 `job_id` → 后台分析 → 前端轮询 |
+| 五层是否保留 `app/` 包根 | **保留 `app/`** | demo 就是 `backend/app/{api,services,agents,security,gateway}` |
+| (顺手纠正)`schemas.py` 放哪 / `db` 用包还是文件 | `schemas.py` 放 **`backend/app/` 根**;`db` 用 **`db.py` 单文件** | 单一来源更干净,和 demo 一致 |
 
 ### 预期产出
 - `docker-compose.yml` / `Makefile` / `infra/postgres/init.sql`
@@ -175,6 +222,12 @@ tree -L 2 backend infra 2>/dev/null || find backend infra -maxdepth 2
 - backend 下有 api/services/agents/security/gateway 五个目录
 - init.sql 里 log_chunks 有 `vector(384)` 列
 - **不能出现**:mock-llm 默认启动(应是 profile)
+
+### 🔍 完成核验(对照真实 demo 的 init.sql)
+- [ ] **`analysis_jobs` 列精确匹配**:`status CHECK IN('pending','running','done','failed')`、`summary TEXT`、`evidence JSONB`、`sample_entries JSONB`、`error`、`created_at`、`finished_at` —— **绝无** `evidence_ids uuid[]` / `anomalies` / `status DEFAULT 'ok'`
+- [ ] `log_chunks`:`embedding vector(384)`(可空)、`chunk_idx/line_start/line_end/text`、`UNIQUE(log_id,chunk_idx)` + ivfflat
+- [ ] `logs`:`source CHECK IN('nginx','app','custom')`、`raw`、`byte_size`、`uploaded_at`
+- [ ] compose 五服务齐 + `mock-llm` 在 `profiles:[mock]`(默认关);五层目录都在;`db.py` 是单文件
 
 ### 兜底
 - `git checkout tutorial-step-2`
@@ -209,6 +262,18 @@ Frontend:
 约束:任何 LLM 调用必须经过 app/gateway/client.py;不改 init.sql 表结构。
 ```
 
+> 这步量大,AI 通常会拆成 5 个 PR 粒度 sub-step(地基 schemas+gateway → services → jobs+analyzer → API 接线 → 前端),每个 sub-step 跑一次测试。
+
+### 🎓 讲师决策卡 — AI 会让你拍板的点 + 标准答复
+
+| AI 可能问 | 标准答复 | 为什么 |
+|---|---|---|
+| **测试策略**:本机 Docker 没起,每步 pytest 怎么测 | **混合**:每步单测 mock 掉 DB/网关(秒过、不依赖 Docker);另留少量 `@pytest.mark.integration` 真实 pgvector 测试,默认 skip | `make test` 默认快单测,集成测试 compose 内跑;和 demo 一致 |
+| **API 端点漂移**:本步用 `/logs/*`+`/chat/query`,但 DESIGN.md 里是 `/ingest /summarize /query` | **以本步四端点为准**,先走 `/design` 更新 DESIGN.md 再写代码 | 这四个才是真实 demo 端点(Step 0 已钉,但若漂了在此纠回) |
+| **Schema 冲突**:analyzer 要写 summary 但表缺列,和"不改 init.sql"冲突 | **additive 修正成 demo 标准列**(`summary/evidence JSONB/sample_entries/error/finished_at`),不删表不降维 | 根因多半是 Step 2 把表建歪;additive 修正不破红线 |
+| "网关不可用"怎么表达 | job 置 **failed**+写 `error`;**API 层返回 503** | demo 不把它做成 status 枚举 |
+| 实现选择:BackgroundTasks(不引 Celery/Redis)、前端迁 `src/` | **同意** | 和真实 demo 一致 |
+
 ### 预期产出
 - `backend/app/{schemas,api/*,services/*,agents/*,gateway/client,security/*}.py` + `tests/`
 - `frontend/src/{lib/api.ts,app/page.tsx,components/*}`
@@ -224,6 +289,20 @@ cd backend && python -m pytest -q ; cd ..
 - 浏览器 `localhost:3000` 出 Dashboard;上传日志 → 有 job
 - 所有 LLM 调用都在 `gateway/client.py`,别处不 import openai
 - **不能出现**:把 LLM key 硬编码进代码
+
+### 🔍 完成核验(按 5 个 sub-step 逐个对)
+
+> ⚠️ **铁律:测试全绿 ≠ 契约对**。测试是 AI 按它自己理解的契约写的,会自己通过。要抓漂移,拿产出和真实 demo 比,不是看测试绿不绿。
+
+- **地基**:`schemas.py` 在 `app/` 根;`gateway/client.py` 是唯一 LLM 出口;红线 `grep -rnE 'openai|anthropic|dashscope|api\.deepseek' backend/app | grep -v app/gateway/` → 空
+- **services**:`embedding` 本地 384 + hash 兜底;`top_k` 用 `embedding <=> %s::vector` 余弦;`vector_store` 写库列 = `log_chunks` 五列,无自创列
+- **jobs+analyzer**:`evidence` 写 **JSONB**(引用真实 chunk,`chunk_ids ⊆ stored`,不编造);status pending→running→done/failed,失败写 `error`+`finished_at`,绝不卡 running;analyzer 只调 gateway
+- **API 接线(最容易漂,重点)**:
+  - [ ] **`GET /logs` 返回最近的 `analysis_jobs`(含 status+summary),response_model=`list[JobResponse]`** —— 不是原始 logs 行!查 `analysis_jobs ORDER BY created_at DESC`
+  - [ ] **`/chat/query` 捕获 `GatewayError` → 503**(不是 500),有对应测试
+  - [ ] `/logs/*` **零网关调用**(一调就抛的 stub 证明);`/chat/query` **恰好 1 次**;`upload`→202+job_id
+- **前端(症状暴露处)**:`src/lib/api.ts` 封装;`next.config` 有 `/api/*→backend` rewrite;"最近历史"读 `GET /logs` 能显示 status+summary(显示成原始日志/空 → 倒查上面 `GET /logs`);五区各有 loading/error 态
+- 一句话自查 `GET /logs`:`grep -nE 'def list_logs|response_model|FROM analysis_jobs|latest_logs' backend/app/api/logs.py backend/app/services/jobs.py`(看到 `latest_logs`/`FROM logs`/`LogListItem` → 错)
 
 ### 兜底
 - `git checkout tutorial-step-3`
