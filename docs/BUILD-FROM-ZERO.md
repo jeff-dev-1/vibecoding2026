@@ -722,11 +722,90 @@ UI 检查(Gateway 控制面 →「供应链 (Koi)」):
 
 ---
 
+## Step 16 · 渗透测试(DAST):ZAP + Nuclei + 报告 tab
+
+> **第三道治理**:Step 11 模型面(Guardrail)、Step 15 供应链面(Koi),这一步补运行时面——对**已部署的应用**做黑盒动态扫描(DAST)。
+
+**对应 PPT**:Harness / 企业落地加分页("跑起来之后再扫一遍真实的 HTTP 面")
+**起点**:Step 15 完成(`training-step-15`)
+**目标**:CI 部署后对活动站点做 DAST,**report-only 不阻断**,结果上报 + 页面展示。
+
+### 粘给 Claude Code 的 Prompt
+```
+先给计划再改。加渗透测试(DAST),report-only(不做门禁,只产报告):
+A. security/pentest/run.py(stdlib):对 TARGET_URL 跑 OWASP ZAP baseline + Nuclei(docker),
+   两者都缺时用 builtin urllib 做被动安全头检查兜底;risk 归一为 High/Medium/Low/Info。
+   镜像可经 ZAP_IMAGE / NUCLEI_IMAGE env 配置(内网换镜像源)。
+B. backend:POST/GET /gateway/pentest-report;db 启动幂等建表 pentest_reports(只增不删)。
+C. 前端 Gateway 控制面新增「渗透测试」tab,按 risk 分级展示 findings。
+D. Jenkinsfile 加 Pentest(DAST)stage(Red Team 之后);Makefile 加 pentest 目标。
+约束:report-only 绝不 fail build;不碰 envoy.yaml;init.sql 非破坏式。
+```
+
+### 预期产出
+- `security/pentest/run.py` / `README.md`、`Makefile`(pentest)
+- `backend/app/schemas.py`(PentestReport)、`backend/app/api/gateway.py`(pentest 端点)、`backend/app/db.py` + `infra/postgres/init.sql`(pentest_reports)
+- 前端 `GatewayPanel.tsx`(渗透 tab)+ `lib/api.ts`、`Jenkinsfile`(Pentest stage)
+
+### 验收命令
+```bash
+TARGET_URL=http://localhost:8000 make pentest   # 产出报告, 退出码 0(report-only)
+```
+UI 检查(Gateway 控制面 →「渗透测试」):有 findings 按 High/Medium/Low/Info 分级展示;无 ZAP 时也至少有 builtin 头检查结果。
+
+### 兜底(`git checkout training-step-16`;或对照 main 的下列文件)
+- `security/pentest/`、`backend/app/api/gateway.py`、`frontend/src/components/GatewayPanel.tsx`
+
+---
+
+## Step 17 · 首屏性能优化:SSR 预取 + 骨架 + 去重往返
+
+> **工程打磨步**:前面都在加能力,这一步专治体验——首屏"打开后空 3-5s 才出数据"的冷启观感。不改后端逻辑、不加组件(遵守 CLAUDE.md "不装 redis")。
+
+**对应 PPT**:Quality / 工程化("AI 写完功能后,人来做性能与体验的收尾")
+**起点**:Step 16 完成(`training-step-16`)
+**目标**:定位真实瓶颈(不是"重读日志",是冷启 + 串行往返 + 误导空态),三层叠加优化。
+
+### 先定位(关键:别凭感觉加缓存)
+- 首屏只发 `listJobs()` + `getJob()` 两个**走索引的轻查询**,数据 upload 时已算好入库,**没有重读/重算日志**。
+- `listJobs` 与 `getJob` 用**同一 SELECT + 同一 `_row_to_job`**,返回的就是完整 job(含 `analysis`)→ 第二次 `getJob` 是多余往返。
+- 3-5s 是**冷启**(代理链/连接首次建立),不是查询慢 → 加 Redis 挡在同样冷的链路后面救不了,且 CLAUDE.md 明令不装。
+
+### 粘给 Claude Code 的 Prompt
+```
+先定位再改, 不要直接加缓存组件。首屏慢的真因有三个, 分别治:
+A. 去重往返:listJobs 返回的已是完整 job(含 analysis), 首屏直接用它渲染,
+   仅状态非终态(分析中)才设 jobId 启动轮询, 省掉一次串行 getJob。
+B. 区分"加载中"vs"真的空":冷启那几秒显示骨架(DataSkeleton), 不再显示
+   误导的"暂无数据"; 确认无历史才显示空态。
+C. SSR 预取:page.tsx 改 server component, 服务端(内网直连 backend)预取最近一次分析,
+   传给 HomeClient 作 initialJob; 配 loading.tsx 流式骨架, 避免 force-dynamic 阻塞白屏;
+   预取失败回退客户端 listJobs。
+顺带:TopBar「AI 助手」按钮做成 toggle(点开出边框、再点收起)。
+约束:不改后端业务逻辑、不加依赖(不装 redis)、不碰 init.sql/envoy.yaml。
+```
+
+### 预期产出
+- `frontend/src/app/page.tsx`(server component 预取)、`frontend/src/app/HomeClient.tsx`(交互逻辑)、`frontend/src/app/loading.tsx`(流式骨架)、`frontend/src/lib/server-api.ts`(服务端取数)
+- `frontend/src/components/TopBar.tsx`(AI 助手 toggle)
+- `docs/ARCHITECTURE.md`(架构总览)
+
+### 验收 / 人工检查点
+- 后端热:骨架一闪 → 整页带数据,浏览器**零往返**;后端冷:先骨架不白屏 → 就绪换整页。
+- 断开/无历史:`initialJob=null` → 客户端 `listJobs` 回退,功能不受影响。
+- 「AI 助手」点一下展开(按钮出边框)、再点一下收起。
+- **不能出现**:为这个加 Redis / 改后端读日志逻辑(真因是冷启+往返,不是数据源)。
+
+### 兜底(`git checkout training-step-17`;或对照 main 的下列文件)
+- `frontend/src/app/page.tsx`、`frontend/src/app/HomeClient.tsx`、`frontend/src/app/loading.tsx`、`frontend/src/lib/server-api.ts`、`frontend/src/components/TopBar.tsx`
+
+---
+
 ## 完成 = 当前 demo 的样子
 
-走完 Step 0-15,你就从空目录搭出了:
+走完 Step 0-17,你就从空目录搭出了:
 nginx/apache/syslog 多格式解析 → RAG + structured generation → Envoy AI Gateway
 双模型路由 → Guardrail 三态 → 红队报告 → 登录门 → 公网/内网 HTTPS →
-供应链安全(Koi 查询台 + CI 门禁),
+供应链安全(Koi 查询台 + CI 门禁)→ 渗透测试(DAST)→ 首屏性能优化,
 和 `main` 分支一致。卡在任何一步:阶段 A 用 `git checkout tutorial-step-N`,
-阶段 B/C 用 `git checkout training-step-N`(N=步号),最终态 = `main` = `training-step-15`。
+阶段 B/C 用 `git checkout training-step-N`(N=步号),最终态 = `main` = `training-step-17`。
