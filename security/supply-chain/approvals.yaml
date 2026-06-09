@@ -20,3 +20,6 @@ approved:
   - marketplace: vscode
     item_id: ms-python.python
     reason: "VS Code 官方 Python 扩展, medium 已评估可接受 (评审 2026-05-25)"
+  - marketplace: github_mcp_registry
+    item_id: upstash/context7
+    reason: "Upstash Context7 文档检索 MCP, Koi 在线裁定 low(PASS); 离线兜底需显式审批, 已评估可接受 (评审 2026-06-09)"
