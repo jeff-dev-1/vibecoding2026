@@ -1,8 +1,10 @@
 "use client";
 
-type Props = { onOpenAssistant: () => void };
+import clsx from "clsx";
 
-export function TopBar({ onOpenAssistant }: Props) {
+type Props = { onToggleAssistant: () => void; assistantOpen: boolean };
+
+export function TopBar({ onToggleAssistant, assistantOpen }: Props) {
   return (
     <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-2.5">
       <div className="flex items-center gap-3">
@@ -19,8 +21,15 @@ export function TopBar({ onOpenAssistant }: Props) {
       </div>
       <div className="flex items-center gap-3">
         <button
-          onClick={onOpenAssistant}
-          className="flex items-center gap-1.5 rounded-full border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 px-3 py-1.5 text-sm font-medium text-violet-700 shadow-sm transition hover:from-violet-100 hover:to-indigo-100"
+          onClick={onToggleAssistant}
+          aria-pressed={assistantOpen}
+          className={clsx(
+            "flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-50 to-indigo-50 px-3 py-1.5 text-sm font-medium text-violet-700 shadow-sm transition hover:from-violet-100 hover:to-indigo-100",
+            // 点一下出边框 (展开), 再点一下收起边框 (收起)
+            assistantOpen
+              ? "border-2 border-violet-500 ring-2 ring-violet-200"
+              : "border border-violet-200",
+          )}
         >
           <span className="text-violet-500">✨</span> AI 助手
         </button>
