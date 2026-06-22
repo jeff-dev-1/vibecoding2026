@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   }
 
   const expectedUser = process.env.DEMO_USERNAME || "admin";
-  const expectedPass = process.env.DEMO_PASSWORD || "vibecoding2026";
+  const expectedPass = process.env.DEMO_PASSWORD || "changeme";
   if (username !== expectedUser || password !== expectedPass) {
     return NextResponse.json({ ok: false, error: "用户名或密码错误" }, { status: 401 });
   }

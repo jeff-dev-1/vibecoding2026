@@ -97,7 +97,7 @@ services:
     environment:
       INTERNAL_BACKEND_URL: http://backend:8000
       DEMO_USERNAME: ${DEMO_USERNAME:-admin}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-changeme}
     ports:
       - "3000:3000"
 

@@ -102,7 +102,7 @@ open http://localhost:3000        # 浏览器打开,出现登录页
 # 上传后能看到流量图表 + AI 分析报告 = 成功
 ```
 
-默认登录密码见讲师下发(或 `.env` 里的 `DEMO_PASSWORD`,默认 `vibecoding2026`)。
+默认登录密码见讲师下发(或 `.env` 里的 `DEMO_PASSWORD`,默认 `changeme`)。
 
 | 验证项 | 期望 |
 |---|---|

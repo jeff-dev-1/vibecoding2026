@@ -678,7 +678,7 @@ A. 登录门(Next.js):
    - src/middleware.ts:无 demo_auth cookie 一律重定向 /login
    - src/app/login/page.tsx:匹配风格的登录页(indigo 渐变)
    - src/app/auth/login/route.ts:校验 DEMO_PASSWORD(env)设 httpOnly cookie;logout 路由
-   - docker-compose frontend 加 DEMO_PASSWORD env(默认 vibecoding2026)
+   - docker-compose frontend 加 DEMO_PASSWORD env(默认 changeme)
    - 注意:/auth/* 不能被 /api/* 重写规则吃掉
 B. CI/CD:流水线 build 双镜像 → push → 部署 → 健康检查(探 /login 因为 / 会 307)
    → smoke(注入拦截)→ 红队
@@ -692,7 +692,7 @@ B. CI/CD:流水线 build 双镜像 → push → 部署 → 健康检查(探 /log
 docker compose up -d --build frontend
 curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/        # 期望 307
 curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/login   # 期望 200
-curl -s -X POST localhost:3000/auth/login -H "Content-Type: application/json" -d '{"password":"vibecoding2026"}' -o /dev/null -w "login %{http_code}\n"
+curl -s -X POST localhost:3000/auth/login -H "Content-Type: application/json" -d '{"password":"changeme"}' -o /dev/null -w "login %{http_code}\n"
 ```
 
 ### 人工检查点

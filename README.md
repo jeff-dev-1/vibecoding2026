@@ -33,7 +33,7 @@
 # 需要 Docker 24+ / Docker Compose v2
 cp .env.example .env
 # 编辑 .env:填 DEEPSEEK_API_KEY 和/或 QWEN_API_KEY(都不填可走离线 mock,见下)
-#           DEMO_PASSWORD 默认 vibecoding2026
+#           DEMO_PASSWORD 默认 changeme
 
 make demo            # docker compose up -d --build,约 90 秒起齐
 
