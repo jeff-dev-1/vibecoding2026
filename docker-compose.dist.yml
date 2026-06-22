@@ -1,0 +1,105 @@
+# 学生发行版 — 拉预构建镜像, 不在本地构建源码。
+#   1. cp .env.example .env  并填入自己的 DEEPSEEK_API_KEY
+#   2. docker compose -f docker-compose.dist.yml up -d
+#   3. 打开 http://localhost:3000 看 demo, http://localhost:8000/docs 看 REST API
+# 镜像走阿里云 ACR; IMAGE_REGISTRY / IMAGE_TAG 在 .env 里配 (默认见下)。
+name: ai-log-analysis-demo
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: alad-postgres
+    environment:
+      POSTGRES_DB: ailogs
+      POSTGRES_USER: ailogs
+      POSTGRES_PASSWORD: ailogs_dev_only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ailogs -d ailogs"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock-llm:
+    image: ${IMAGE_REGISTRY:-crpi-wl9py5zi0809kanh.cn-shanghai.personal.cr.aliyuncs.com/vibecoding-2026}/alad-mock-llm:${IMAGE_TAG:-latest}
+    container_name: alad-mock-llm
+    profiles: ["mock"]   # key 还没到手时的兜底: docker compose -f docker-compose.dist.yml --profile mock up
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:11434/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  envoy-ai-gateway:
+    image: envoyproxy/envoy:v1.32-latest
+    container_name: alad-gateway
+    volumes:
+      - ./gateway/envoy-ai-gateway/config/envoy-deepseek.yaml.tmpl:/etc/envoy/envoy-deepseek.yaml.tmpl:ro
+      - ./gateway/envoy-ai-gateway/config/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/entrypoint.sh"]
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      ENVOY_LOG_LEVEL: info
+    ports:
+      - "8090:8080"   # AI Gateway listener (host 8090 → container 8080)
+      - "9901:9901"   # Envoy admin (demo only, never in prod)
+    healthcheck:
+      test: ["CMD", "bash", "-c", ": < /dev/tcp/localhost/9901"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    image: ${IMAGE_REGISTRY:-crpi-wl9py5zi0809kanh.cn-shanghai.personal.cr.aliyuncs.com/vibecoding-2026}/alad-backend:${IMAGE_TAG:-latest}
+    container_name: alad-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      envoy-ai-gateway:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ailogs:ailogs_dev_only@postgres:5432/ailogs
+      LLM_GATEWAY_URL: http://envoy-ai-gateway:8080
+      LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-demo-key-not-secret}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-envoy}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: backend
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      KOI_ENABLED: ${KOI_ENABLED:-false}
+      KOI_API_BASE: ${KOI_API_BASE:-https://api.prod.koi.security/api/external/v2}
+      KOI_API_KEY: ${KOI_API_KEY:-}
+      KOI_AUTH_STYLE: ${KOI_AUTH_STYLE:-bearer}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  frontend:
+    image: ${IMAGE_REGISTRY:-crpi-wl9py5zi0809kanh.cn-shanghai.personal.cr.aliyuncs.com/vibecoding-2026}/alad-frontend:${IMAGE_TAG:-latest}
+    container_name: alad-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      INTERNAL_BACKEND_URL: http://backend:8000
+      DEMO_USERNAME: ${DEMO_USERNAME:-admin}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
