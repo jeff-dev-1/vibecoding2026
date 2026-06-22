@@ -1,4 +1,9 @@
-.PHONY: help demo up down restart logs seed test redteam pentest supply-scan scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend
+.PHONY: help demo up down restart logs seed test redteam pentest supply-scan scan sbom ac check-gateway-only check-healthy clean rebuild-backend rebuild-frontend dist dist-images dist-bundle
+
+# === 发行版变量 (可在命令行覆盖: make dist REGISTRY=registry.cn-hangzhou.aliyuncs.com/yourns TAG=v0.1.0) ===
+REGISTRY ?= crpi-wl9py5zi0809kanh.cn-shanghai.personal.cr.aliyuncs.com/vibecoding-2026
+TAG      ?= latest
+PLATFORMS ?= linux/amd64,linux/arm64
 
 help:
 	@echo "Vibe Coding Demo — AI Log Analysis Platform"
@@ -100,3 +105,36 @@ check-healthy:
 clean:
 	docker compose down -v
 	docker compose rm -f
+
+# === 发行: 推镜像到阿里云 ACR + 打学生 bundle ===
+# 前置: docker login --username=<你的阿里云账号> registry.cn-hangzhou.aliyuncs.com
+#       docker buildx create --use   (首次, 建一个支持多架构的 builder)
+dist: dist-images dist-bundle
+	@echo ""
+	@echo "发行完成。镜像已推到 $(REGISTRY) (tag: $(TAG))"
+	@echo "学生 bundle: dist/alad-demo-$(TAG).tar.gz"
+
+dist-images:
+	@echo "buildx 多架构推送 ($(PLATFORMS)) → $(REGISTRY)"
+	docker buildx build --platform $(PLATFORMS) \
+	  -t $(REGISTRY)/alad-backend:$(TAG) -t $(REGISTRY)/alad-backend:latest \
+	  --push ./backend
+	docker buildx build --platform $(PLATFORMS) \
+	  -t $(REGISTRY)/alad-frontend:$(TAG) -t $(REGISTRY)/alad-frontend:latest \
+	  --push ./frontend
+	docker buildx build --platform $(PLATFORMS) \
+	  -t $(REGISTRY)/alad-mock-llm:$(TAG) -t $(REGISTRY)/alad-mock-llm:latest \
+	  --push ./gateway/envoy-ai-gateway/upstream-mock
+
+# 学生只需要这些: 发行 compose + 运行时挂载的配置 + env 模板 + 上手文档。
+# 不含源码 (backend/ frontend/)、不含 Jenkinsfile / 内部文档。
+dist-bundle:
+	@rm -rf dist/bundle && mkdir -p dist/bundle
+	cp docker-compose.dist.yml dist/bundle/docker-compose.dist.yml
+	cp .env.example dist/bundle/.env.example
+	cp docs/STUDENT-QUICKSTART.md dist/bundle/README.md
+	mkdir -p dist/bundle/infra dist/bundle/gateway/envoy-ai-gateway
+	cp -R infra/postgres dist/bundle/infra/
+	cp -R gateway/envoy-ai-gateway/config dist/bundle/gateway/envoy-ai-gateway/
+	cd dist && tar -czf alad-demo-$(TAG).tar.gz -C bundle .
+	@echo "bundle 内容:" && find dist/bundle -type f | sed 's|dist/bundle/|  |'
