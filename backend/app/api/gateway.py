@@ -8,9 +8,12 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+import httpx
+from fastapi import APIRouter
 from sqlalchemy import text
 
 from .. import observability
@@ -26,8 +29,8 @@ from ..schemas import (
     SupplyChainReport,
     SupplyChainVerdict,
 )
-from ..security.input_guard import check
 from ..security import supply_chain
+from ..security.input_guard import check
 
 router = APIRouter()
 
@@ -270,4 +273,111 @@ async def gateway_prompts() -> dict:
             {"id": sid, "title": v["title"], "content": v["prompt"]}
             for sid, v in SCENARIO_PROMPTS.items()
         ],
+    }
+
+
+# ===== Portkey 分析代理 =====
+#
+# 为什么从 Portkey 拿, 而不是用 backend 自己的内存窗口:
+#   1. 内存窗口每次重启就清零 —— "Models & usage" 页面显示 "no calls yet" 而实际有调用,
+#      就是这个原因; 演示时重启一次后端, 账就没了。
+#   2. Portkey 那份是厂商自己的计量, 不是我们的估算。我们现在还得在界面上写
+#      "成本为估算量级(非账单)" 这句免责声明。
+#   3. 护栏裁定只有厂商侧有: 446 = DENY, 246 = 标记但放行。本地根本看不到 246,
+#      因为那种请求在我们这里是正常返回的。
+#
+# key 只在服务端用, 不下发给浏览器。
+
+_PORTKEY_ANALYTICS = "https://api.portkey.ai/v1/analytics"
+
+_WINDOWS: dict[str, int] = {"24h": 1, "7d": 7, "30d": 30}
+
+
+async def _portkey_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
+    """取一个分析端点; 失败返回空 dict 而不是抛 —— 看板缺一条线, 不该让整页 500。"""
+    try:
+        r = await client.get(
+            f"{_PORTKEY_ANALYTICS}/{path}",
+            params=params,
+            headers={"x-portkey-api-key": settings.portkey_api_key},
+            timeout=20.0,
+        )
+        return r.json() if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
+@router.get("/analytics")
+async def gateway_analytics(window: str = "24h") -> dict:
+    """AI 网关用量 —— 直接取自 Portkey 的分析 API。
+
+    返回时间序列 + 汇总 + 护栏裁定分布。没配 Portkey key 时返回 configured=False,
+    前端据此回落到本地内存窗口 (Envoy 路径下只有那一份)。
+    """
+    if not settings.portkey_api_key:
+        return {"configured": False, "window": window}
+
+    days = _WINDOWS.get(window, 1)
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    params = {
+        "time_of_generation_min": start.strftime("%Y-%m-%d"),
+        "time_of_generation_max": (end + timedelta(days=1)).strftime("%Y-%m-%d"),
+        # 只统计本应用的流量。同一个 Portkey 账号下还有别的应用, 不过滤的话这里显示的
+        # 是整个账号的数字 —— 看起来很热闹, 但和这个 demo 无关。
+        "metadata": json.dumps({"app": "alad"}),
+    }
+
+    async with httpx.AsyncClient() as client:
+        requests_g, cost_g, latency_g, tokens_g, errors_g, models, codes = await asyncio.gather(
+            _portkey_get(client, "graphs/requests", params),
+            _portkey_get(client, "graphs/cost", params),
+            _portkey_get(client, "graphs/latency", params),
+            _portkey_get(client, "graphs/tokens", params),
+            _portkey_get(client, "graphs/errors", params),
+            _portkey_get(client, "groups/model", params),
+            _portkey_get(client, "groups/status_code", params),
+        )
+
+    def series(g: dict, field: str) -> list[dict]:
+        return [
+            {"t": p.get("timestamp"), "v": p.get(field) or 0}
+            for p in (g.get("data_points") or [])
+        ]
+
+    by_code = {
+        int(d["status_code"]): d.get("requests", 0)
+        for d in (codes.get("data") or [])
+        if d.get("status_code") is not None
+    }
+
+    return {
+        "configured": True,
+        "window": window,
+        "since": start.isoformat(),
+        "summary": {
+            "requests": (requests_g.get("summary") or {}).get("total", 0),
+            "cost_usd": (cost_g.get("summary") or {}).get("total", 0),
+            "tokens": (tokens_g.get("summary") or {}).get("total", 0),
+            "latency_p50": (latency_g.get("summary") or {}).get("p50", 0),
+            "latency_p90": (latency_g.get("summary") or {}).get("p90", 0),
+            "errors": (errors_g.get("summary") or {}).get("total", 0),
+        },
+        "series": {
+            "requests": series(requests_g, "total"),
+            "cost": series(cost_g, "total"),
+            "tokens": series(tokens_g, "total"),
+            "latency": series(latency_g, "p50"),
+        },
+        "by_model": [
+            {"model": d.get("model"), "requests": d.get("requests", 0)}
+            for d in (models.get("data") or [])
+        ],
+        # 护栏裁定 —— Portkey 的约定: 446 拒绝, 246 标记但放行, 其余是正常/错误。
+        "guardrail": {
+            "denied": by_code.get(446, 0),
+            "flagged": by_code.get(246, 0),
+            "ok": by_code.get(200, 0),
+            "other": sum(v for k, v in by_code.items() if k not in (200, 246, 446)),
+        },
     }

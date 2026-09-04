@@ -24,6 +24,9 @@ from ..telemetry import get_tracer
 
 
 LLMBackend = Literal["deepseek", "qwen"]
+
+# Portkey 侧给本应用流量打的标签; 分析接口按它过滤。
+_APP_TAG = "alad"
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -73,6 +76,9 @@ def _build_request(backend: LLMBackend, provider: str) -> tuple[str, dict[str, s
             # trace id 让这次调用能在 Portkey 控制台里被找到 —— 界面上的 trace 和
             # 厂商后台的记录得能对上, 否则"可观测"只是本地自说自话。
             "x-portkey-trace-id": f"alad-{uuid4().hex[:16]}",
+            # metadata 用来把这个应用的流量从账号里择出来。同一个 Portkey 账号下还有
+            # 别的应用在跑, 不打标签的话看板统计的是整个账号 —— 那个数字对不上任何人。
+            "x-portkey-metadata": '{"app":"' + _APP_TAG + '","_user":"' + _APP_TAG + '"}',
         }
         if route["custom_host"]:
             headers["x-portkey-custom-host"] = route["custom_host"]

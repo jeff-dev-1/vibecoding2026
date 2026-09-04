@@ -4,10 +4,10 @@ import { Boxes, FlaskConical, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { SupplyChainFlow } from "./SupplyChainFlow";
+import { UsagePanel } from "./UsagePanel";
 import { useI18n, type Key } from "@/lib/i18n";
 import {
   gatewayInfo,
-  gatewayObservability,
   gatewayPrompts,
   guardrailTest,
   pentestReport,
@@ -21,7 +21,6 @@ import {
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
-  type Observability,
   type PentestFinding,
   type PentestReport,
   type RedteamReport,
@@ -48,20 +47,15 @@ type Props = {
  * 原来要在一个标签页里切换上游, 再跳到另一个标签页看它的账单, 两边对不上号。
  * 现在上面是模型卡, 点哪个就在下面看哪个的用量。
  */
-export function ModelsView({ backend, onBackendChange }: Props) {
+export function ModelsView({ backend, onBackendChange, provider }: Props & { provider: GatewayProvider }) {
   const { t } = useI18n();
   const [info, setInfo] = useState<GatewayInfo | null>(null);
-  const [obs, setObs] = useState<Observability | null>(null);
   // 看哪个模型的用量。默认跟随当前路由, 但可以单独点开另一个做对比 ——
   // "切过去之后成本变了多少"正是要看的事。
   const [viewing, setViewing] = useState<string | null>(null);
 
   useEffect(() => {
     gatewayInfo().then(setInfo).catch(() => {});
-    const load = () => gatewayObservability().then(setObs).catch(() => {});
-    load();
-    const t = setInterval(load, 5000); // 5s 轮询, 现场能看请求实时累积
-    return () => clearInterval(t);
   }, []);
 
   const selected = viewing ?? backend;
@@ -76,7 +70,6 @@ export function ModelsView({ backend, onBackendChange }: Props) {
             b={b}
             active={backend === b.id}
             selected={selected === b.id}
-            stats={obs?.by_backend?.[b.id]}
             onSelect={() => setViewing(b.id)}
             onRoute={() => {
               onBackendChange(b.id as LLMBackend);
@@ -89,18 +82,19 @@ export function ModelsView({ backend, onBackendChange }: Props) {
         {t("gw.routeNote1")} <code className="font-mono">X-LLM-Backend</code> {t("gw.routeNote2")}
       </p>
 
-      <ObservabilityFor backend={selected} obs={obs} />
+      {/* 用量取自 Portkey (厂商计量), 不是本地内存窗口 —— 后者一重启就清零。
+          Envoy 路径下没有厂商侧的账, UsagePanel 内部会说明。 */}
+      <UsagePanel provider={provider} />
     </div>
   );
 }
 
 function ModelCard({
-  b, active, selected, stats, onSelect, onRoute,
+  b, active, selected, onSelect, onRoute,
 }: {
   b: GatewayBackend;
   active: boolean;
   selected: boolean;
-  stats?: { calls: number; tokens?: number; cost_usd?: number; latency_p50_ms?: number; latency_p95_ms?: number };
   onSelect: () => void;
   onRoute: () => void;
 }) {
@@ -148,23 +142,6 @@ function ModelCard({
       </div>
       <div className="mt-1 font-mono text-[11px] text-muted">{b.model}</div>
       <div className="font-mono text-[11px] text-muted">↑ {b.upstream}</div>
-      {/* 卡片上直接带这一路的用量 —— 不用跳到另一页才知道它花了多少 */}
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-line pt-2 font-mono text-[11px]">
-        {stats ? (
-          <>
-            <span className="text-ink">
-              {stats.calls} {t("gw.calls")}
-            </span>
-            <span className="text-muted">{stats.tokens ?? 0} tok</span>
-            <span className="text-muted">${(stats.cost_usd ?? 0).toFixed(4)}</span>
-            <span className="text-muted">
-              p50 {stats.latency_p50_ms ?? 0}ms
-            </span>
-          </>
-        ) : (
-          <span className="text-muted">{t("gw.noCalls")}</span>
-        )}
-      </div>
     </button>
   );
 }
@@ -832,122 +809,6 @@ const SC_STYLE: Record<string, { ring: string; label: string; hintKey: Key }> = 
   PASS: { ring: "bg-brand-green/10 text-brand-green ring-brand-green/30", label: "PASS", hintKey: "gw.hintPass" as const },
 };
 
-/** 某一路上游的用量。obs 由上层轮询后传进来, 避免两个组件各拉一份。 */
-function ObservabilityFor({ backend, obs }: { backend: string; obs: Observability | null }) {
-  const { t, lang } = useI18n();
-  if (!obs) return null;
-  if (obs.empty) {
-    return (
-      <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-        {t("gw.noObs")}
-        <div className="mt-1 text-[11px]">
-          {t("gw.currentProvider")}: {obs.current_provider}
-        </div>
-      </div>
-    );
-  }
-
-  const fmtCost = (c?: number) => `$${(c ?? 0).toFixed(4)}`;
-  const st = obs.by_backend?.[backend];
-  // 只看选中这一路的调用。总览留在下面一行小字里 —— 卡片上的数字必须和标题说的是同一路,
-  // 否则"点了 qwen 却看到 deepseek 的账单"。
-  const recent = (obs.recent ?? []).filter((c) => c.backend === backend);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-baseline gap-2">
-        <h3 className="text-sm font-semibold text-ink">{t("gw.usage")}</h3>
-        <span className="font-mono text-xs text-primary">{backend}</span>
-        <span className="text-[11px] text-muted">
-          · {t("gw.recentWindow")} {obs.window} {t("gw.windowCalls")}
-        </span>
-      </div>
-
-      {!st ? (
-        <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-          {t("gw.noCallsThisRoute")}
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              [t("gw.callCount"), String(st.calls ?? 0)],
-              ["tokens", String(st.tokens ?? 0)],
-              [t("gw.estCost"), fmtCost(st.cost_usd)],
-              [t("gw.latency"), `${st.latency_p50_ms ?? 0}/${st.latency_p95_ms ?? 0}ms`],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-xl border border-line p-2.5">
-                <div className="text-[10px] text-muted">{k}</div>
-                <div className="mt-0.5 font-mono text-sm font-semibold text-ink">{v}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-xl border border-line">
-            <div className="border-b border-line px-3 py-2 text-xs font-medium text-muted">
-              {t("gw.recentCalls")} · {backend}
-            </div>
-            {recent.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-muted">{t("gw.noCallsInWindow")}</div>
-            ) : (
-              <div className="max-h-72 overflow-auto">
-                <table className="w-full text-[11px]">
-                  <tbody>
-                    {recent.map((c, i) => (
-                      <tr key={i} className="border-b border-line last:border-0">
-                        {/* 时间按界面语言格式化; 服务端与浏览器时区不同, 声明这处差异是有意的 */}
-                        <td className="py-1.5 pl-3 text-muted" suppressHydrationWarning>
-                          {new Date(c.ts * 1000).toLocaleTimeString(
-                            lang === "en" ? "en-GB" : lang === "zh-Hant" ? "zh-TW" : "zh-CN",
-                          )}
-                        </td>
-                        <td className="py-1.5 font-mono text-muted">{c.model}</td>
-                        <td className="py-1.5 text-right font-mono text-muted">
-                          {c.prompt_tokens}+{c.completion_tokens}tok
-                        </td>
-                        <td className="py-1.5 text-right font-mono text-muted">{c.latency_ms}ms</td>
-                        <td className="py-1.5 text-right font-mono text-muted">
-                          {fmtCost(c.cost_usd)}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right">
-                          {c.ok ? (
-                            <span className="text-brand-green">ok</span>
-                          ) : (
-                            <span className="text-brand-red">err</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* 全局那一行放在最后, 小字 —— 它是背景, 不是重点 */}
-      <p className="text-[11px] text-muted">
-        {t("gw.allUpstreams")} {obs.total_calls ?? 0} {t("gw.calls")} ·{" "}
-        {(obs.total_prompt_tokens ?? 0) + (obs.total_completion_tokens ?? 0)} tokens ·{" "}
-        {fmtCost(obs.total_cost_usd)} ·{" "}
-        <span
-          className={clsx(
-            "font-medium",
-            (obs.failed_calls ?? 0) > 0 ? "text-brand-red" : "text-brand-green",
-          )}
-        >
-          {t("gw.errorRate")} {((obs.error_rate ?? 0) * 100).toFixed(1)}%
-        </span>
-        {(obs.blocked_calls ?? 0) > 0 && (
-          <span className="text-brand-orange"> · {t("gw.blockedBy")} {obs.blocked_calls}</span>
-        )}
-        {t("gw.obsNote")}
-      </p>
-    </div>
-  );
-}
-
 function ProjectSupplyReport() {
   const { t } = useI18n();
   const [rep, setRep] = useState<SupplyChainReport | null>(null);
@@ -1141,10 +1002,15 @@ function SupplyChainTester() {
             {busy ? t("gw.checking") : t("gw.check")}
           </button>
         </div>
-        {/* 接口给了就用接口的, 没给用兜底那份 —— 演示台上永远有东西可点。 */}
+        {/* 示例跟着上面选中的 marketplace 走 —— 切到 npm 还列着 pypi 的包, 点下去
+            又把下拉框改回 pypi, 看起来像坏了。该 marketplace 没有样例时才回落到全部。 */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] text-muted">{t("gw.tryThese")}</span>
-          {(meta?.samples?.length ? meta.samples : FALLBACK_SAMPLES).map((s) => (
+          {(() => {
+            const all = meta?.samples?.length ? meta.samples : FALLBACK_SAMPLES;
+            const forThis = all.filter((x) => x.marketplace === marketplace);
+            return forThis.length ? forThis : all;
+          })().map((s) => (
             <button
               key={s.label}
               type="button"

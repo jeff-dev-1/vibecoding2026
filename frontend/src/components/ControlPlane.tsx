@@ -213,7 +213,7 @@ export function ControlPlane({
                 )}
               >
               {section === "models" && (
-                <ModelsView backend={backend} onBackendChange={onBackendChange} />
+                <ModelsView backend={backend} onBackendChange={onBackendChange} provider={provider} />
               )}
               {section === "guardrail" && (
                 <GuardrailView provider={provider} onProviderChange={onProviderChange} />

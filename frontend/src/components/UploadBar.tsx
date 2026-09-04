@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Loader2, RefreshCw, Upload } from "lucide-react";
 import { uploadLog, type Job } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -13,6 +13,7 @@ type Props = {
 
 export function UploadBar({ onUploaded, currentJob, onRefresh }: Props) {
   const { t } = useI18n();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,20 +35,33 @@ export function UploadBar({ onUploaded, currentJob, onRefresh }: Props) {
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-card px-6 py-2.5">
-      {/* input 嵌在 label 里, 就不能再给 label 加 htmlFor 指向它。
-          两种关联同时存在时 Chrome 会派发两次激活: 第一次弹出文件框, 第二次把它顶掉,
-          表现就是"点了没反应"。留隐式关联 (嵌套) 这一种即可。 */}
-      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink transition hover:border-ink/25">
+      {/* button + ref.click(), 不用 label。
+          label 那套 (htmlFor / 嵌套 / display:none) 的激活转发在各浏览器上有微妙差异,
+          之前 htmlFor 和嵌套同时存在导致双触发, 文件框弹出又被顶掉。显式调用没有这些
+          歧义: 点按钮 → 打开文件框, 一条路径。 */}
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        className="flex items-center gap-2 rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink transition hover:border-ink/25 disabled:opacity-50"
+      >
         {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
         {busy ? t("upload.busy") : t("upload.button")}
-        <input
-          type="file"
-          accept=".log,.txt,.json,.gz"
-          className="hidden"
-          onChange={handle}
-          disabled={busy}
-        />
-      </label>
+      </button>
+      {/* 视觉上藏起来, 但仍然参与布局 (sr-only 那套), 而不是 display:none。
+          有些 Chrome 策略下, 对一个 display:none 的 file input 调 .click() 不会弹出
+          选择器 —— 表现就是"点了没反应", 而且没有任何报错。这样写没有这个风险,
+          屏幕阅读器也仍然能找到它。 */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".log,.txt,.json,.gz"
+        onChange={handle}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="absolute h-px w-px overflow-hidden opacity-0"
+        style={{ clip: "rect(0 0 0 0)", clipPath: "inset(50%)" }}
+      />
 
       {currentJob ? (
         <div className="text-xs text-muted">

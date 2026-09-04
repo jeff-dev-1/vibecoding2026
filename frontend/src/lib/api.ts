@@ -418,3 +418,34 @@ export type Observability = {
 export async function gatewayObservability() {
   return _fetch<Observability>("/gateway/observability");
 }
+
+
+// ===== AI 网关用量 (取自 Portkey 分析 API, 后端代理) =====
+export type SeriesPoint = { t: string; v: number };
+
+export type Analytics = {
+  configured: boolean;
+  window: string;
+  since?: string;
+  summary: {
+    requests: number;
+    cost_usd: number;
+    tokens: number;
+    latency_p50: number;
+    latency_p90: number;
+    errors: number;
+  };
+  series: {
+    requests: SeriesPoint[];
+    cost: SeriesPoint[];
+    tokens: SeriesPoint[];
+    latency: SeriesPoint[];
+  };
+  by_model: { model: string; requests: number }[];
+  /** 护栏裁定分布 —— Portkey 约定: 446 拒绝, 246 标记但放行。 */
+  guardrail: { denied: number; flagged: number; ok: number; other: number };
+};
+
+export async function gatewayAnalytics(window = "24h") {
+  return _fetch<Analytics>(`/gateway/analytics?window=${window}`);
+}
