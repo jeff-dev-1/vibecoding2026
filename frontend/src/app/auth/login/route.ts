@@ -1,29 +1,31 @@
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE, accessCode, mint, sessionSecret } from "@/lib/session";
 
-// 校验用户名+密码 -> 设 httpOnly cookie。凭证存 env (DEMO_USERNAME/DEMO_PASSWORD), 不进代码仓。
+// 校验访问码 → 签发一枚签名 cookie (见 lib/session.ts)。
+// 访问码存 env (DEMO_ACCESS_CODE), 不进代码仓。
 export async function POST(req: Request) {
-  let username = "";
-  let password = "";
+  let code = "";
   try {
     const body = await req.json();
-    username = body?.username ?? "";
-    password = body?.password ?? "";
+    // code 是现在的字段名; password 是旧名, 一起认, 免得老的脚本/书签直接坏掉。
+    code = body?.code ?? body?.password ?? "";
   } catch {
     return NextResponse.json({ ok: false, error: "bad request" }, { status: 400 });
   }
 
-  const expectedUser = process.env.DEMO_USERNAME || "admin";
-  const expectedPass = process.env.DEMO_PASSWORD || "vibecoding2026";
-  if (username !== expectedUser || password !== expectedPass) {
-    return NextResponse.json({ ok: false, error: "用户名或密码错误" }, { status: 401 });
+  if (typeof code !== "string" || code !== accessCode()) {
+    return NextResponse.json({ ok: false, error: "invalid_code" }, { status: 401 });
   }
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("demo_auth", "1", {
+  res.cookies.set(SESSION_COOKIE, await mint(sessionSecret()), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 12, // 12 小时
+    // 走 HTTPS 时才加 secure。演示常在 http://<内网 IP>:3020 上跑, 无条件加 secure
+    // 会让 cookie 根本不被存下来 —— 表现为"输对了码却一直跳回登录页"。
+    secure: new URL(req.url).protocol === "https:",
+    maxAge: Number(process.env.SESSION_TTL_HOURS ?? 12) * 3600,
   });
   return res;
 }

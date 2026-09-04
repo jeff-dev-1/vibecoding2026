@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
+
+from .prompts import DEFAULT_ANSWER_LANG, AnswerLang
 
 
 LogSource = Literal["nginx", "app", "custom"]
@@ -150,6 +152,9 @@ class ChatRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     backend: LLMBackend = "deepseek"
     scenario: str | None = Field(default=None, max_length=80, description="VS 综合 / 健康巡检 / SSL / 告警 / 慢根因 / 错误码 / 安全运营")
+    # 回答语言 —— 跟着读者的界面语言走。缺省简体, 和前端的回落规则一致。
+    # 只影响散文的语言; 日志原文/路径/IP/状态码这些证据永远不翻译。
+    lang: AnswerLang = DEFAULT_ANSWER_LANG
 
 
 class Citation(BaseModel):
@@ -159,6 +164,31 @@ class Citation(BaseModel):
     line_end: int
     excerpt: str = Field(..., max_length=400)
     score: float
+
+
+class TraceStep(BaseModel):
+    """链路上的一跳。前端的"请求链路回放"逐步播放这个列表。
+
+    每一跳都是真的发生过的: ms 是量出来的, detail 里的数字来自那一跳自己的返回,
+    没走到的跳不出现在列表里 (例如被护栏拦下时就没有 retrieval / llm 两跳)。
+    """
+
+    id: Literal["guard", "retrieval", "gateway", "llm"]
+    ok: bool = True
+    ms: int = 0
+    # 一行人话的结论, 前端可直接显示; 具体键值放 detail 让人展开看。
+    summary: str = ""
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatTrace(BaseModel):
+    steps: list[TraceStep] = Field(default_factory=list)
+    total_ms: int = 0
+    backend: LLMBackend
+    model: str
+    provider: str = "envoy"
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class ChatResponse(BaseModel):
@@ -172,6 +202,8 @@ class ChatResponse(BaseModel):
     redacted: bool = False
     redaction_rules: list[str] = Field(default_factory=list)
     redaction_preview: str | None = None
+    # 这一次请求实际走过的链路 (计时/用量/路由)。被护栏拦下时也有, 只是只有 guard 一跳。
+    trace: ChatTrace | None = None
 
 
 # ===== Guardrail test (现场测试用, 不改配置) =====

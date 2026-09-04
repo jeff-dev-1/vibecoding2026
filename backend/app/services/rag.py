@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
@@ -16,9 +17,21 @@ from sqlalchemy import text
 from ..db import SessionLocal
 from ..gateway.client import chat
 from ..prompts import RAG_SYSTEM_PROMPT as SYSTEM_PROMPT
+from ..prompts import answer_language_directive
 from ..schemas import ParsedLogEntry
 from .embedding import embed
 from .vector_store import StoredChunk, search
+
+# 没数据时的兜底文案。这句不经过模型, 所以要自己按语言给 —— 否则界面切成 English 之后
+# 这里会是唯一一句突然变中文的话。
+_NO_DATA = {
+    "zh-Hans": "尚未上传日志或分析未完成。请先上传 Nginx access log 并等分析完成。",
+    "zh-Hant": "尚未上傳日誌或分析未完成。請先上傳 Nginx access log 並等分析完成。",
+    "en": (
+        "No log has been uploaded yet, or the analysis has not finished. "
+        "Upload an Nginx access log and wait for the analysis to complete."
+    ),
+}
 
 
 @dataclass
@@ -26,6 +39,15 @@ class RagResult:
     answer: str
     chunks: list[StoredChunk]
     model: str
+    # 链路计时与用量 —— 给前端的"请求链路回放"用。
+    # 这些是真的量出来的, 不是为了动画凑的数; 没走到的那一跳留 0/None, 前端照实显示。
+    retrieval_ms: int = 0
+    llm_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    gateway_url: str = ""
+    routing_header: str = ""
+    structured_used: bool = False
 
 
 async def _load_structured(log_id: UUID | None) -> str:
@@ -105,7 +127,9 @@ async def _load_structured(log_id: UUID | None) -> str:
     return "STRUCTURED ANALYSIS (authoritative aggregates):\n" + "\n".join(parts)
 
 
-def _compose(question: str, structured: str, chunks: list[StoredChunk]) -> list[dict[str, str]]:
+def _compose(
+    question: str, structured: str, chunks: list[StoredChunk], lang: str
+) -> list[dict[str, str]]:
     ctx_lines = [
         f"[chunk_idx={c.chunk_idx} lines={c.line_start}-{c.line_end} score={c.score:.2f}]\n{c.text}"
         for c in chunks
@@ -119,8 +143,10 @@ def _compose(question: str, structured: str, chunks: list[StoredChunk]) -> list[
         "聚合类问题从 STRUCTURED ANALYSIS 取数; 具体某条记录从 RAW LOG EXCERPTS 引用 [chunk_idx=N]; "
         "若数据不含该信息直接说明, 不要编。"
     )
+    # 语言指令跟在 system prompt 后面, 而不是塞进提示词资产里 ——
+    # 资产只有一份, 语言是每次请求带的。
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT + "\n- " + answer_language_directive(lang)},
         {"role": "user", "content": user},
     ]
 
@@ -131,17 +157,32 @@ async def answer(
     top_k: int,
     log_id: UUID | None = None,
     backend: Literal["deepseek", "qwen"] = "deepseek",
+    lang: str = "zh-Hans",
 ) -> RagResult:
+    t0 = time.monotonic()
     structured = await _load_structured(log_id)
     q_vec = embed([question])[0]
     chunks = await search(q_vec, top_k=top_k, log_id=log_id)
+    retrieval_ms = int((time.monotonic() - t0) * 1000)
 
     if not chunks and not structured:
         return RagResult(
-            answer="尚未上传日志或分析未完成。请先上传 Nginx access log 并等分析完成。",
+            answer=_NO_DATA.get(lang, _NO_DATA["zh-Hans"]),
             chunks=[],
             model="none",
+            retrieval_ms=retrieval_ms,
         )
-    messages = _compose(question, structured, chunks)
+    messages = _compose(question, structured, chunks, lang)
     res = await chat(messages, backend=backend)
-    return RagResult(answer=res.text, chunks=chunks, model=res.model)
+    return RagResult(
+        answer=res.text,
+        chunks=chunks,
+        model=res.model,
+        retrieval_ms=retrieval_ms,
+        llm_ms=res.latency_ms,
+        prompt_tokens=res.prompt_tokens,
+        completion_tokens=res.completion_tokens,
+        gateway_url=res.gateway_url,
+        routing_header=res.routing_header,
+        structured_used=bool(structured),
+    )

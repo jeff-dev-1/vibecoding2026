@@ -74,6 +74,12 @@ class CompletionResult:
     prompt_tokens: int
     completion_tokens: int
     raw: dict[str, Any]
+    # 网关往返耗时 (ms)。已经为 observability 算过了, 顺手带给调用方 ——
+    # 前端的链路回放要拿它, 否则就只能编一个数字。
+    latency_ms: int = 0
+    # 实际打到的网关地址与路由头, 用于向前端说明"这一跳去了哪、凭什么路由的"。
+    gateway_url: str = ""
+    routing_header: str = ""
 
 
 class GatewayError(RuntimeError):
@@ -145,6 +151,9 @@ async def chat(
         prompt_tokens=usage.get("prompt_tokens", 0),
         completion_tokens=usage.get("completion_tokens", 0),
         raw=data,
+        latency_ms=latency_ms,
+        gateway_url=url,
+        routing_header=headers.get("X-LLM-Backend", ""),
     )
 
 

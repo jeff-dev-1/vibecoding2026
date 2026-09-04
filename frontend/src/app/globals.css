@@ -2,10 +2,145 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * 设计 token —— 与 pawn-employee-assistant 同源。
+ *
+ * 一条规则: 组件里不写具体颜色, 只写语义名 (bg / card / ink / muted / line / surface + brand-*)。
+ * 换肤 = 换这里的变量, 不用去 200 个 className 里找 slate-500。
+ *
+ * 值存成 "R G B" 三元组而不是 hex —— Tailwind 3 的 <alpha-value> 需要它才能支持
+ * border-line/50 这种透明度修饰符。hex 变量在 Tailwind 3 里做不到。
+ */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+
+  --c-bg: 252 252 249;
+  --c-card: 255 255 255;
+  --c-ink: 19 66 82;
+  --c-muted: 90 110 120;
+  --c-line: 224 221 213;
+  --c-surface: 245 245 240;
+
+  --c-green: 0 204 102;
+  --c-red: 200 71 39;
+  --c-blue: 0 192 232;
+  --c-orange: 250 88 45;
+
+  /* 单一强调色。三张参考截图都是绿, 整个页面的重点色只走这一个变量。 */
+  --c-primary: var(--c-green);
+}
+
+/**
+ * 深色, 写三处因为有三个状态。
+ *
+ * `system` 不落 data-theme, 由媒体查询决定 —— 但读者明确选了 light 时它不能生效,
+ * 所以要 :not() 守卫。`light` / `dark` 是显式选择, 两个方向都要赢过媒体查询。
+ * 只把深色写进媒体查询是个经典 bug: 切换器改了一个没人监听的属性。
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --c-bg: 26 28 28;
+    --c-card: 34 36 36;
+    --c-ink: 240 240 236;
+    --c-muted: 160 170 176;
+    --c-line: 58 60 60;
+    --c-surface: 42 44 44;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-bg: 26 28 28;
+  --c-card: 34 36 36;
+  --c-ink: 240 240 236;
+  --c-muted: 160 170 176;
+  --c-line: 58 60 60;
+  --c-surface: 42 44 44;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+html {
+  /* 滚动条槽是从根元素画的; 背景只设在 body 上会在深色模式下留一条白边。 */
+  background: rgb(var(--c-bg));
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-bg text-ink antialiased;
+}
+
+::selection {
+  background: rgb(var(--c-primary) / 0.25);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  /* 显式颜色而不是 transparent: 抽屉内层滚动容器到 body 之间全是透明的,
+     transparent 会透出画布底色, 深色模式下就是面板边上一条白条。 */
+  background: rgb(var(--c-bg));
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-line));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--c-muted));
+}
+
+/**
+ * LLM 回答的 markdown 样式。手写而不是装 @tailwindcss/typography ——
+ * 这里列出的就是 Markdown.tsx 允许输出的全部元素, 插件会带来另外九十个用不上的。
+ */
+.answer {
+  line-height: 1.65;
+}
+.answer > * + * {
+  margin-top: 0.7rem;
+}
+.answer table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 0.6rem;
+  font-size: 0.9em;
+}
+.answer th,
+.answer td {
+  padding: 0.45rem 0.8rem;
+  text-align: start;
+  vertical-align: top;
+}
+.answer th {
+  /* 挂在单元格而不是 thead 上: border-collapse: separate 下 thead 背景不一定画得出来。 */
+  background: rgb(var(--c-surface));
+  font-weight: 600;
+  white-space: nowrap;
+}
+.answer tbody tr + tr td {
+  border-top: 1px solid rgb(var(--c-line));
+}
+.answer thead + tbody tr:first-child td {
+  border-top: 1px solid rgb(var(--c-line));
+}
+
+/* 回放器: 连线从起点画到终点, 用 stroke-dashoffset 动画而不是 JS 逐帧。 */
+@keyframes flow-draw {
+  from {
+    stroke-dashoffset: var(--len);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.flow-edge-active {
+  animation: flow-draw 0.55s ease-out forwards;
 }

@@ -10,6 +10,8 @@ bytes/referer/UA), 不引入日志里不存在的概念(证书/VS/告警源)。
 """
 from __future__ import annotations
 
+from typing import Literal
+
 # RAG / 助手 的 system prompt — 混合上下文版 (结构化优先, RAG 补细节, 缺数据不编)
 RAG_SYSTEM_PROMPT = (
     "你是 Nginx access log 分析助手。回答必须基于下方提供的两类材料:\n"
@@ -21,8 +23,38 @@ RAG_SYSTEM_PROMPT = (
     "应用内部错误堆栈), 直接说明 'Nginx access log 不包含该信息', 禁止编造。\n"
     "- access log 能回答的范围: 请求量、状态码、路径、客户端 IP、UA、referer、"
     "响应大小、扫描/枚举特征、速率异常。\n"
-    "- 简洁、用中文、给数字。"
+    "- 简洁、给数字。"
 )
+
+# 回答语言 —— 从 system prompt 里拆出来单独一条。
+#
+# 原来 RAG_SYSTEM_PROMPT 里写死了"用中文", 结果界面切成 English 之后模型还是中文作答。
+# 语言是每次请求的属性 (跟着读者的界面语言走), 不是提示词资产的固定内容, 所以拆开:
+# 提示词资产保持一份, 语言指令按请求拼上去。
+#
+# 不翻译的东西在这条指令里点名: 日志原文、路径、IP、UA、状态码是证据,
+# 翻译过的证据没法拿去和原始日志对账。
+AnswerLang = Literal["zh-Hans", "zh-Hant", "en"]
+
+_LANG_DIRECTIVE: dict[str, str] = {
+    "zh-Hans": (
+        "用简体中文作答。日志原文、URL 路径、IP、User-Agent、状态码等证据保持原样, 不要翻译。"
+    ),
+    "zh-Hant": (
+        "用繁體中文作答。日誌原文、URL 路徑、IP、User-Agent、狀態碼等證據保持原樣, 不要翻譯。"
+    ),
+    "en": (
+        "Answer in English. Leave the evidence itself untranslated — raw log lines, URL paths, "
+        "IP addresses, user agents and status codes stay exactly as they appear in the log."
+    ),
+}
+
+DEFAULT_ANSWER_LANG: AnswerLang = "zh-Hans"
+
+
+def answer_language_directive(lang: str | None) -> str:
+    """回答语言指令。未知/缺省回落简体, 和界面的回落规则保持一致。"""
+    return _LANG_DIRECTIVE.get(lang or "", _LANG_DIRECTIVE[DEFAULT_ANSWER_LANG])
 
 # 7 个场景化 quick-action 模板 — 全部基于 nginx access log 可支撑的分析
 SCENARIO_PROMPTS: dict[str, dict[str, str]] = {

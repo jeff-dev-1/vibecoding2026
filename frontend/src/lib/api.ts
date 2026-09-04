@@ -132,6 +132,29 @@ export type Citation = EvidenceItem & { score: number };
 
 export type LLMBackend = "deepseek" | "qwen";
 
+// ===== 请求链路 (控制面的"链路回放"消费这个) =====
+// 后端每一跳自己计时后返回, 前端只负责画。没走到的跳不会出现在 steps 里,
+// 所以回放器不需要 (也不允许) 为了动画顺滑而补一个假节点。
+export type TraceStepId = "guard" | "retrieval" | "gateway" | "llm";
+
+export type TraceStep = {
+  id: TraceStepId;
+  ok: boolean;
+  ms: number;
+  summary: string;
+  detail: Record<string, unknown>;
+};
+
+export type ChatTrace = {
+  steps: TraceStep[];
+  total_ms: number;
+  backend: LLMBackend;
+  model: string;
+  provider: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+};
+
 export type ChatResponse = {
   answer: string;
   citations: Citation[];
@@ -142,6 +165,7 @@ export type ChatResponse = {
   redacted?: boolean;
   redaction_rules?: string[];
   redaction_preview?: string | null;
+  trace?: ChatTrace | null;
 };
 
 async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -173,6 +197,8 @@ export async function chat(args: {
   log_id?: string;
   backend?: LLMBackend;
   scenario?: string;
+  /** 界面语言 —— 模型用它决定散文用哪种语言作答。证据 (日志原文/IP/路径) 不受影响。 */
+  lang?: string;
 }) {
   return _fetch<ChatResponse>("/chat/query", {
     method: "POST",
@@ -183,6 +209,7 @@ export async function chat(args: {
       top_k: 5,
       backend: args.backend ?? "deepseek",
       scenario: args.scenario,
+      lang: args.lang ?? "zh-Hans",
     }),
   });
 }
