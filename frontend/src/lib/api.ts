@@ -84,9 +84,19 @@ export type GatewayGuardrail = {
   categories?: string[];
 };
 
+export type GatewayProvider = "envoy" | "portkey";
+
+export type ProviderMeta = {
+  id: GatewayProvider;
+  label: string;
+  kind: string;
+  note: string;
+};
+
 export type GatewayInfo = {
   gateway: string;
-  provider?: string;
+  provider?: GatewayProvider;
+  providers?: ProviderMeta[];
   default_backend: string;
   backends: GatewayBackend[];
   guardrails: GatewayGuardrail[];
@@ -199,6 +209,8 @@ export async function chat(args: {
   scenario?: string;
   /** 界面语言 —— 模型用它决定散文用哪种语言作答。证据 (日志原文/IP/路径) 不受影响。 */
   lang?: string;
+  /** 网关 provider —— 现场可切, 不传则用后端启动默认值。 */
+  provider?: GatewayProvider;
 }) {
   return _fetch<ChatResponse>("/chat/query", {
     method: "POST",
@@ -210,12 +222,14 @@ export async function chat(args: {
       backend: args.backend ?? "deepseek",
       scenario: args.scenario,
       lang: args.lang ?? "zh-Hans",
+      provider: args.provider,
     }),
   });
 }
 
-export async function gatewayInfo() {
-  return _fetch<GatewayInfo>("/gateway/info");
+/** provider 可选 —— 传了就预览那个 provider 的配置 (护栏清单会跟着变)。 */
+export async function gatewayInfo(provider?: string) {
+  return _fetch<GatewayInfo>(`/gateway/info${provider ? `?provider=${provider}` : ""}`);
 }
 
 export async function gatewayPrompts() {

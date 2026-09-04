@@ -1,9 +1,10 @@
 "use client";
 
+import { Boxes, FlaskConical, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { SupplyChainFlow } from "./SupplyChainFlow";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type Key } from "@/lib/i18n";
 import {
   gatewayInfo,
   gatewayObservability,
@@ -16,6 +17,8 @@ import {
   supplyChainSamples,
   type GatewayBackend,
   type GatewayInfo,
+  type GatewayProvider,
+  type ProviderMeta,
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
@@ -47,6 +50,7 @@ type Props = {
  * 现在上面是模型卡, 点哪个就在下面看哪个的用量。
  */
 export function ModelsView({ backend, onBackendChange }: Props) {
+  const { t } = useI18n();
   const [info, setInfo] = useState<GatewayInfo | null>(null);
   const [obs, setObs] = useState<Observability | null>(null);
   // 看哪个模型的用量。默认跟随当前路由, 但可以单独点开另一个做对比 ——
@@ -83,8 +87,7 @@ export function ModelsView({ backend, onBackendChange }: Props) {
         ))}
       </div>
       <p className="text-[11px] text-muted">
-        业务代码不变 — Gateway 看 <code className="font-mono">X-LLM-Backend</code> 头,
-        一行 yaml 切换上游。点卡片看该上游的用量, 点「切换」把流量改到它。
+        {t("gw.routeNote1")} <code className="font-mono">X-LLM-Backend</code> {t("gw.routeNote2")}
       </p>
 
       <ObservabilityFor backend={selected} obs={obs} />
@@ -102,6 +105,7 @@ function ModelCard({
   onSelect: () => void;
   onRoute: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -116,11 +120,11 @@ function ModelCard({
         <span className="text-sm font-medium text-ink">{b.label}</span>
         {active && (
           <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
-            当前路由
+            {t("gw.current")}
           </span>
         )}
         {b.default && (
-          <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted">默认</span>
+          <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted">{t("gw.default")}</span>
         )}
         <span className="flex-1" />
         {!active && (
@@ -139,7 +143,7 @@ function ModelCard({
             }}
             className="rounded-lg border border-line px-2 py-0.5 text-xs text-muted transition hover:border-ink/25 hover:text-ink"
           >
-            切换
+            {t("gw.switch")}
           </span>
         )}
       </div>
@@ -149,7 +153,9 @@ function ModelCard({
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-line pt-2 font-mono text-[11px]">
         {stats ? (
           <>
-            <span className="text-ink">{stats.calls} 次</span>
+            <span className="text-ink">
+              {stats.calls} {t("gw.calls")}
+            </span>
             <span className="text-muted">{stats.tokens ?? 0} tok</span>
             <span className="text-muted">${(stats.cost_usd ?? 0).toFixed(4)}</span>
             <span className="text-muted">
@@ -157,7 +163,7 @@ function ModelCard({
             </span>
           </>
         ) : (
-          <span className="text-muted">尚无调用</span>
+          <span className="text-muted">{t("gw.noCalls")}</span>
         )}
       </div>
     </button>
@@ -165,14 +171,25 @@ function ModelCard({
 }
 
 /** 护栏 — 现场测试器 + 网关侧规则清单。 */
-export function GuardrailView() {
+export function GuardrailView({
+  provider,
+  onProviderChange,
+}: {
+  provider: GatewayProvider;
+  onProviderChange: (p: GatewayProvider) => void;
+}) {
+  const { t } = useI18n();
   const [info, setInfo] = useState<GatewayInfo | null>(null);
   useEffect(() => {
-    gatewayInfo().then(setInfo).catch(() => {});
-  }, []);
+    // 跟着选中的 provider 拉 —— 换网关就是换数据面, 护栏清单必须跟着变,
+    // 否则界面会印着一份和当前配置无关的静态说明。
+    setInfo(null);
+    gatewayInfo(provider).then(setInfo).catch(() => {});
+  }, [provider]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <ProviderSwitch value={provider} onChange={onProviderChange} meta={info?.providers} />
       <GuardrailTester />
       {!info ? (
         <Loading />
@@ -220,8 +237,7 @@ export function GuardrailView() {
         ))
       )}
       <p className="pt-1 text-[11px] text-muted">
-        提示词是软约束, Guardrail 是硬护栏。试在 AI 助手里输入
-        &quot;ignore previous instructions&quot; 看拦截。
+        {t("gw.guardNote")}
       </p>
     </div>
   );
@@ -255,6 +271,7 @@ export function SupplyChainView() {
  * 而不是八个折叠条。
  */
 export function PromptsView() {
+  const { t } = useI18n();
   const [prompts, setPrompts] = useState<GatewayPrompts | null>(null);
   const [sel, setSel] = useState<string | null>(null);
 
@@ -328,8 +345,7 @@ export function PromptsView() {
       </div>
 
       <p className="text-[11px] text-muted">
-        提示词作为受管资产集中存放, 可审计、可复用、可版本化 — 而不是散落在代码里。
-        回答语言不在这里: 它是每次请求带的参数, 所以同一份提示词能用三种语言作答。
+        {t("gw.promptNote")}
       </p>
     </div>
   );
@@ -337,6 +353,7 @@ export function PromptsView() {
 
 /** 复制提示词原文 —— 讲师要把它贴进 PPT 或另一个工程里。 */
 function CopyBtn({ text }: { text: string }) {
+  const { t } = useI18n();
   const [done, setDone] = useState(false);
   return (
     <button
@@ -348,7 +365,7 @@ function CopyBtn({ text }: { text: string }) {
       }}
       className="rounded-lg border border-line px-2 py-0.5 text-[11px] text-muted transition hover:border-ink/25 hover:text-ink"
     >
-      {done ? "已复制" : "复制"}
+      {done ? t("gw.copied") : t("gw.copy")}
     </button>
   );
 }
@@ -361,6 +378,7 @@ function CopyBtn({ text }: { text: string }) {
  * 渗透打运行时的 HTTP 面。放在一起, 这个区别反而看得更清楚。
  */
 export function AssuranceView() {
+  const { t } = useI18n();
   const [redteam, setRedteam] = useState<RedteamReport | null>(null);
   const [pentest, setPentest] = useState<PentestReport | null>(null);
   useEffect(() => {
@@ -372,22 +390,22 @@ export function AssuranceView() {
     <div className="space-y-6">
       <section>
         <div className="mb-2 flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold text-ink">红队 · 模型行为</h3>
-          <span className="text-[11px] text-muted">注入 / 越狱 / PII —— 打的是 LLM 怎么应答</span>
+          <h3 className="text-sm font-semibold text-ink">{t("gw.redteamTitle")}</h3>
+          <span className="text-[11px] text-muted">{t("gw.redteamSub")}</span>
         </div>
         <RedteamView report={redteam} />
       </section>
 
       <section>
         <div className="mb-2 flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold text-ink">渗透测试 · 运行时 Web 面</h3>
-          <span className="text-[11px] text-muted">ZAP + Nuclei —— 打的是跑着的 HTTP 服务</span>
+          <h3 className="text-sm font-semibold text-ink">{t("gw.pentestTitle")}</h3>
+          <span className="text-[11px] text-muted">{t("gw.pentestSub")}</span>
         </div>
         <PentestView report={pentest} />
       </section>
 
       <p className="text-[11px] text-muted">
-        两者互补: 红队测 LLM 行为, 渗透测运行时 Web 面。都在上线前跑, 都会让 CI 失败。
+        {t("gw.assuranceNote")}
       </p>
     </div>
   );
@@ -405,10 +423,12 @@ function Loading() {
 }
 
 function RedteamView({ report }: { report: RedteamReport | null }) {
+  const { t } = useI18n();
   if (!report || report.empty) {
     return (
       <div className="rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">
-        暂无红队报告 —— CI/离线运行 <code className="font-mono text-ink">make redteam</code> 生成。
+        {t("gw.noRedteam")} <code className="font-mono text-ink">make redteam</code>
+        {t("gw.noRedteam2")}
       </div>
     );
   }
@@ -419,9 +439,9 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
       {/* 总通过率 */}
       <div className="rounded-lg border border-line p-3">
         <div className="mb-1 flex items-center justify-between">
-          <span className="text-xs text-muted">总通过率</span>
+          <span className="text-xs text-muted">{t("gw.passRate")}</span>
           <span className={clsx("text-xs font-medium", meet ? "text-brand-green" : "text-brand-orange")}>
-            {meet ? "✅ 达标 (≥85%)" : "⚠️ 未达标"}
+            {meet ? t("gw.meets") : t("gw.notMeets")}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -434,14 +454,14 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
           <span className="font-mono text-lg font-semibold text-ink">{overall}%</span>
         </div>
         <div className="mt-1 text-[11px] text-muted">
-          {report.passed}/{report.total} 通过 · {report.tool}
+          {report.passed}/{report.total} {t("gw.passed")} · {report.tool}
           {report.created_at && ` · ${new Date(report.created_at).toLocaleString("zh-CN")}`}
         </div>
       </div>
 
       {/* 按类别 */}
       <div className="rounded-lg border border-line p-3">
-        <div className="mb-2 text-xs font-medium text-muted">按攻击类别</div>
+        <div className="mb-2 text-xs font-medium text-muted">{t("gw.byCategory")}</div>
         <div className="space-y-2">
           {report.categories.map((c) => {
             const pct = Math.round(c.pass_rate * 100);
@@ -470,7 +490,7 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
       {report.failures.length > 0 && (
         <div className="rounded-lg border border-brand-red/30 bg-brand-red/10 p-3">
           <div className="mb-2 text-xs font-medium text-brand-red">
-            漏网用例 ({report.failures.length}) — 需关注
+            {t("gw.failures")} ({report.failures.length}) — {t("gw.failuresNeedAttention")}
           </div>
           <ul className="space-y-1.5">
             {report.failures.map((f, i) => (
@@ -480,7 +500,7 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
                     {f.category}
                   </span>
                   <span className="text-muted">
-                    期望 {f.expected} → 实际 {f.actual}
+                    {t("gw.expected")} {f.expected} → {t("gw.actual")} {f.actual}
                   </span>
                 </div>
                 <div className="font-mono text-[11px] text-muted">{f.payload}</div>
@@ -488,7 +508,7 @@ function RedteamView({ report }: { report: RedteamReport | null }) {
             ))}
           </ul>
           <p className="mt-2 text-[11px] text-muted">
-            漏网多为中文/编码变体 → 规则不够, 需 ML guard (Slide 48)
+            {t("gw.failureNote")}
           </p>
         </div>
       )}
@@ -512,11 +532,12 @@ const RISK_CHIP: Record<string, string> = {
 const RISK_ORDER = ["High", "Medium", "Low", "Info"];
 
 function PentestView({ report }: { report: PentestReport | null }) {
+  const { t } = useI18n();
   if (!report || report.empty) {
     return (
       <div className="rounded-lg border border-dashed border-line p-6 text-center text-sm text-muted">
-        暂无渗透测试报告。CI/离线运行 <code className="text-muted">make pentest</code> 生成
-        (ZAP + Nuclei，无 docker 走 builtin 兜底)。
+        {t("gw.noPentest")} <code className="font-mono text-ink">make pentest</code>{" "}
+        {t("gw.noPentest2")}
       </div>
     );
   }
@@ -528,10 +549,10 @@ function PentestView({ report }: { report: PentestReport | null }) {
       <div className="rounded-lg border border-line p-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs text-muted">
-            DAST 风险总览 · 目标 <code className="text-muted">{report.target}</code>
+            {t("gw.dastOverview")} <code className="text-muted">{report.target}</code>
           </span>
           <span className={clsx("text-xs font-medium", meet ? "text-brand-green" : "text-brand-red")}>
-            {meet ? "✅ 达标 (0 High/Medium)" : `⚠️ ${report.high} High · ${report.medium} Medium`}
+            {meet ? t("gw.meetsDast") : `${report.high} High · ${report.medium} Medium`}
           </span>
         </div>
         <div className="grid grid-cols-4 gap-2">
@@ -545,14 +566,15 @@ function PentestView({ report }: { report: PentestReport | null }) {
           ))}
         </div>
         <div className="mt-2 text-[11px] text-muted">
-          共 {report.total} 项 · 扫描器: {report.tools.join(", ") || "—"} · {report.tool}
+          {t("gw.totalItems")} {report.total} {t("gw.items")} · {t("gw.scanners")}:{" "}
+          {report.tools.join(", ") || "—"} · {report.tool}
           {report.created_at && ` · ${new Date(report.created_at).toLocaleString("zh-CN")}`}
         </div>
       </div>
 
       {/* 按风险分级条形 */}
       <div className="rounded-lg border border-line p-3">
-        <div className="mb-2 text-xs font-medium text-muted">按风险等级</div>
+        <div className="mb-2 text-xs font-medium text-muted">{t("gw.byRisk")}</div>
         <div className="space-y-2">
           {RISK_ORDER.map((r) => {
             const n = report.counts[r] || 0;
@@ -573,15 +595,14 @@ function PentestView({ report }: { report: PentestReport | null }) {
       {report.findings.length > 0 && (
         <div className="rounded-lg border border-line p-3">
           <div className="mb-2 text-xs font-medium text-muted">
-            发现明细 ({report.findings.length})
+            {t("gw.findings")} ({report.findings.length})
           </div>
           <FindingList findings={report.findings} />
         </div>
       )}
 
       <p className="text-[11px] text-muted">
-        红队测 LLM 行为，渗透测试测运行时 Web 面 — 二者互补 (Slide 48 风险矩阵"运行时"列)。
-        当前 report-only，不卡 CI。
+        {t("gw.pentestNote")}
       </p>
     </div>
   );
@@ -623,6 +644,7 @@ function FindingList({ findings }: { findings: PentestFinding[] }) {
 }
 
 function FindingGroup({ risk, items }: { risk: string; items: PentestFinding[] }) {
+  const { t } = useI18n();
   // Info 是噪声, 默认收起; High/Medium/Low 是要看的, 默认展开。
   const [open, setOpen] = useState(risk !== "Info");
   return (
@@ -635,7 +657,9 @@ function FindingGroup({ risk, items }: { risk: string; items: PentestFinding[] }
         <span className={clsx("rounded px-1.5 py-0.5 text-[10px] font-medium", RISK_CHIP[risk])}>
           {risk}
         </span>
-        <span className="text-xs text-muted">{items.length} 项</span>
+        <span className="text-xs text-muted">
+          {items.length} {t("gw.items")}
+        </span>
         <span className="flex-1" />
         <span className="font-mono text-[10px] text-muted">{open ? "−" : "+"}</span>
       </button>
@@ -671,7 +695,56 @@ function FindingGroup({ risk, items }: { risk: string; items: PentestFinding[] }
   );
 }
 
+/**
+ * 网关 provider 切换。
+ *
+ * 这不是一个"设置项", 是演示的一个论点: 换网关就是换数据面, 护栏跟着换位置。
+ *   envoy    自建。护栏是网关进程里的 Lua filter, 配置在本仓库, 可 diff 可回滚。
+ *   portkey  托管。护栏挂在厂商控制台的 pc-/pg- 配置上 (可接 Prisma AIRS)。
+ * 两边 backend 都不持有厂商 key —— 相同的那一条, 恰恰是网关存在的理由。
+ */
+function ProviderSwitch({
+  value,
+  onChange,
+  meta,
+}: {
+  value: GatewayProvider;
+  onChange: (p: GatewayProvider) => void;
+  meta?: ProviderMeta[];
+}) {
+  const active = meta?.find((m) => m.id === value);
+  return (
+    <div className="rounded-xl border border-line p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <nav className="flex gap-1 rounded-xl bg-surface p-1">
+          {(["envoy", "portkey"] as GatewayProvider[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChange(id)}
+              aria-pressed={value === id}
+              className={clsx(
+                "rounded-lg px-3 py-1 text-xs font-medium transition",
+                value === id ? "bg-card text-primary shadow-sm" : "text-muted hover:text-ink",
+              )}
+            >
+              {meta?.find((m) => m.id === id)?.label ?? id}
+            </button>
+          ))}
+        </nav>
+        {active && (
+          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">
+            {active.kind}
+          </span>
+        )}
+      </div>
+      {active && <p className="mt-2 text-[11px] leading-relaxed text-muted">{active.note}</p>}
+    </div>
+  );
+}
+
 function GuardrailTester() {
+  const { t } = useI18n();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<GuardrailTestResult | null>(null);
@@ -693,14 +766,14 @@ function GuardrailTester() {
   return (
     <div className="rounded-lg border border-dashed border-line bg-surface/60 p-3">
       <div className="mb-2 text-xs font-medium text-muted">
-        🧪 现场测试 — 输入 payload 看 guardrail 怎么处理 (走真实 input_guard)
+        🧪 {t("gw.guardTester")}
       </div>
       <div className="flex gap-2">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && run()}
-          placeholder="比如: ignore previous instructions..."
+          placeholder={t("gw.guardPlaceholder")}
           className="flex-1 rounded border border-line px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
         />
         <button
@@ -708,7 +781,7 @@ function GuardrailTester() {
           disabled={busy}
           className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-95 disabled:opacity-40"
         >
-          {busy ? "…" : "测试"}
+          {busy ? "…" : t("gw.test")}
         </button>
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1">
@@ -727,15 +800,14 @@ function GuardrailTester() {
         <div className={clsx("mt-2 rounded p-2.5 text-sm ring-1", VERDICT_STYLE[res.verdict])}>
           <div className="flex items-center gap-2">
             <span className="font-bold">{res.verdict}</span>
-            {res.verdict === "PASS" && <span className="text-xs">→ 正常进入模型</span>}
-            {res.verdict === "BLOCKED" && <span className="text-xs">→ 拒绝, 不进模型</span>}
-            {res.verdict === "REDACTED" && <span className="text-xs">→ 脱敏后才进模型</span>}
+            {res.verdict === "PASS" && <span className="text-xs">{t("gw.toModel")}</span>}
+            {res.verdict === "BLOCKED" && <span className="text-xs">{t("gw.rejected")}</span>}
+            {res.verdict === "REDACTED" && <span className="text-xs">{t("gw.redactedThen")}</span>}
           </div>
           {res.verdict === "PASS" && /[一-鿿]/.test(text) && /(dan|没有任何限制|忽略|越狱|系统提示)/i.test(text) && (
             <div className="mt-1.5 rounded bg-card/70 p-1.5 text-[11px] text-muted">
-              ⚠️ 反面教材: 这条中文越狱<strong>没被拦住</strong>。规则型 guardrail 只覆盖已知英文
-              pattern, 拦不住中文/编码/间接注入 → 生产需接 ML-based guard
-              (ProtectAI / Lakera / NeMo), 由 Envoy AI Gateway 的 AIGatewayGuardrail 统一接入。
+              {t("gw.counterExample")}<strong>{t("gw.notBlocked")}</strong>
+              {t("gw.counterExample2")}
             </div>
           )}
           {res.matched_rules.length > 0 && (
@@ -758,21 +830,23 @@ function GuardrailTester() {
   );
 }
 
-const SC_STYLE: Record<string, { ring: string; label: string; hint: string }> = {
-  BLOCK: { ring: "bg-brand-red/10 text-brand-red ring-brand-red/30", label: "BLOCK", hint: "→ 高危, 禁止安装" },
-  REQUEST_APPROVAL: { ring: "bg-brand-orange/10 text-brand-orange ring-brand-orange/30", label: "REQUEST-APPROVAL", hint: "→ 中危, 需人工审批" },
-  PASS: { ring: "bg-brand-green/10 text-brand-green ring-brand-green/30", label: "PASS", hint: "→ 低危, 放行" },
+const SC_STYLE: Record<string, { ring: string; label: string; hintKey: Key }> = {
+  BLOCK: { ring: "bg-brand-red/10 text-brand-red ring-brand-red/30", label: "BLOCK", hintKey: "gw.hintBlock" as const },
+  REQUEST_APPROVAL: { ring: "bg-brand-orange/10 text-brand-orange ring-brand-orange/30", label: "REQUEST-APPROVAL", hintKey: "gw.hintApproval" as const },
+  PASS: { ring: "bg-brand-green/10 text-brand-green ring-brand-green/30", label: "PASS", hintKey: "gw.hintPass" as const },
 };
 
 /** 某一路上游的用量。obs 由上层轮询后传进来, 避免两个组件各拉一份。 */
 function ObservabilityFor({ backend, obs }: { backend: string; obs: Observability | null }) {
-  const { lang } = useI18n();
+  const { t, lang } = useI18n();
   if (!obs) return null;
   if (obs.empty) {
     return (
       <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-        暂无调用数据。去 AI 助手发几条对话, 这里会实时显示每次 LLM 调用的延迟 / tokens / 估算成本。
-        <div className="mt-1 text-[11px]">当前 provider: {obs.current_provider}</div>
+        {t("gw.noObs")}
+        <div className="mt-1 text-[11px]">
+          {t("gw.currentProvider")}: {obs.current_provider}
+        </div>
       </div>
     );
   }
@@ -786,25 +860,25 @@ function ObservabilityFor({ backend, obs }: { backend: string; obs: Observabilit
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-sm font-semibold text-ink">用量</h3>
+        <h3 className="text-sm font-semibold text-ink">{t("gw.usage")}</h3>
         <span className="font-mono text-xs text-primary">{backend}</span>
         <span className="text-[11px] text-muted">
-          · 最近 {obs.window} 次窗口 · 成本为估算量级(非账单)
+          · {t("gw.recentWindow")} {obs.window} {t("gw.windowCalls")}
         </span>
       </div>
 
       {!st ? (
         <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-          这一路还没有调用。把路由切到它, 再去 AI 助手问一个问题。
+          {t("gw.noCallsThisRoute")}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
-              ["调用数", String(st.calls ?? 0)],
+              [t("gw.callCount"), String(st.calls ?? 0)],
               ["tokens", String(st.tokens ?? 0)],
-              ["估算成本", fmtCost(st.cost_usd)],
-              ["延迟 p50/p95", `${st.latency_p50_ms ?? 0}/${st.latency_p95_ms ?? 0}ms`],
+              [t("gw.estCost"), fmtCost(st.cost_usd)],
+              [t("gw.latency"), `${st.latency_p50_ms ?? 0}/${st.latency_p95_ms ?? 0}ms`],
             ].map(([k, v]) => (
               <div key={k} className="rounded-xl border border-line p-2.5">
                 <div className="text-[10px] text-muted">{k}</div>
@@ -815,10 +889,10 @@ function ObservabilityFor({ backend, obs }: { backend: string; obs: Observabilit
 
           <div className="rounded-xl border border-line">
             <div className="border-b border-line px-3 py-2 text-xs font-medium text-muted">
-              最近调用 · {backend}
+              {t("gw.recentCalls")} · {backend}
             </div>
             {recent.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-muted">这一路窗口内没有调用</div>
+              <div className="px-3 py-6 text-center text-xs text-muted">{t("gw.noCallsInWindow")}</div>
             ) : (
               <div className="max-h-72 overflow-auto">
                 <table className="w-full text-[11px]">
@@ -858,7 +932,7 @@ function ObservabilityFor({ backend, obs }: { backend: string; obs: Observabilit
 
       {/* 全局那一行放在最后, 小字 —— 它是背景, 不是重点 */}
       <p className="text-[11px] text-muted">
-        全部上游合计 {obs.total_calls ?? 0} 次 ·{" "}
+        {t("gw.allUpstreams")} {obs.total_calls ?? 0} {t("gw.calls")} ·{" "}
         {(obs.total_prompt_tokens ?? 0) + (obs.total_completion_tokens ?? 0)} tokens ·{" "}
         {fmtCost(obs.total_cost_usd)} ·{" "}
         <span
@@ -867,19 +941,19 @@ function ObservabilityFor({ backend, obs }: { backend: string; obs: Observabilit
             (obs.failed_calls ?? 0) > 0 ? "text-brand-red" : "text-brand-green",
           )}
         >
-          错误率 {((obs.error_rate ?? 0) * 100).toFixed(1)}%
+          {t("gw.errorRate")} {((obs.error_rate ?? 0) * 100).toFixed(1)}%
         </span>
         {(obs.blocked_calls ?? 0) > 0 && (
-          <span className="text-brand-orange"> · guardrail 拦截 {obs.blocked_calls}</span>
+          <span className="text-brand-orange"> · {t("gw.blockedBy")} {obs.blocked_calls}</span>
         )}
-        。每次调用都过 Gateway, 在调用点采集延迟/tokens/成本 (内存窗口, 演示用;
-        生产可接 OTel → Grafana/Tempo)。
+        {t("gw.obsNote")}
       </p>
     </div>
   );
 }
 
 function ProjectSupplyReport() {
+  const { t } = useI18n();
   const [rep, setRep] = useState<SupplyChainReport | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -891,7 +965,8 @@ function ProjectSupplyReport() {
   if (rep.empty) {
     return (
       <div className="rounded-lg border border-dashed border-line p-4 text-center text-xs text-muted">
-        暂无本项目供应链报告。运行 <code className="text-muted">make supply-scan</code> 或等 CI 门禁生成。
+        {t("gw.noSupplyReport")} <code className="font-mono text-ink">make supply-scan</code>{" "}
+        {t("gw.noSupplyReport2")}
       </div>
     );
   }
@@ -899,36 +974,47 @@ function ProjectSupplyReport() {
   return (
     <div className="rounded-lg border border-line bg-card">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <span className="text-sm font-semibold text-ink">📦 本项目供应链报告</span>
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Boxes className="size-4 text-muted" />
+          {t("gw.supplyReport")}
+        </span>
         <span
           className={clsx(
             "rounded-full px-2 py-0.5 text-[10px] font-medium",
             pass ? "bg-brand-green/10 text-brand-green" : "bg-brand-red/10 text-brand-red",
           )}
         >
-          {pass ? "✅ 门禁通过" : "⛔ 门禁未过"}
+          {pass ? t("gw.gatePass") : t("gw.gateFail")}
         </span>
         <span className="ml-auto text-[10px] text-muted">
-          {rep.koi_enabled ? "Koi 实时" : "离线兜底"}
+          {rep.koi_enabled ? t("gw.koiLive") : t("gw.koiOffline")}
           {rep.created_at && ` · ${new Date(rep.created_at).toLocaleString("zh-CN")}`}
         </span>
       </div>
       <div className="space-y-2 p-3">
         <div className="flex flex-wrap gap-2 text-[11px]">
           <span className="rounded bg-brand-green/10 px-2 py-0.5 text-brand-green">PASS {rep.counts.PASS ?? 0}</span>
-          <span className="rounded bg-brand-orange/10 px-2 py-0.5 text-brand-orange">已审批 {rep.approved.length}</span>
-          <span className="rounded bg-brand-orange/10 px-2 py-0.5 text-brand-orange">待审批 {rep.needs_approval.length}</span>
+          <span className="rounded bg-brand-orange/10 px-2 py-0.5 text-brand-orange">
+            {t("gw.approved")} {rep.approved.length}
+          </span>
+          <span className="rounded bg-brand-orange/10 px-2 py-0.5 text-brand-orange">
+            {t("gw.needsApproval")} {rep.needs_approval.length}
+          </span>
           <span className="rounded bg-brand-red/10 px-2 py-0.5 text-brand-red">BLOCK {rep.counts.BLOCK ?? 0}</span>
-          <span className="rounded bg-surface px-2 py-0.5 text-muted">共 {rep.total}</span>
+          <span className="rounded bg-surface px-2 py-0.5 text-muted">
+            {t("gw.total")} {rep.total}
+          </span>
         </div>
         {rep.blocked.length > 0 && (
-          <div className="text-[11px] text-brand-red">⛔ 禁止: {rep.blocked.join(", ")}</div>
+          <div className="text-[11px] text-brand-red">{t("gw.blocked")}: {rep.blocked.join(", ")}</div>
         )}
         {rep.needs_approval.length > 0 && (
-          <div className="text-[11px] text-brand-orange">⏳ 待审批: {rep.needs_approval.join(", ")}</div>
+          <div className="text-[11px] text-brand-orange">
+            {t("gw.needsApproval")}: {rep.needs_approval.join(", ")}
+          </div>
         )}
         <button onClick={() => setOpen(!open)} className="text-[11px] text-primary">
-          {open ? "收起" : `展开全部 ${rep.items.length} 个制品`}
+          {open ? t("gw.collapse") : `${t("gw.expandAll")} ${rep.items.length} ${t("gw.artifacts")}`}
         </button>
         {open && (
           <div className="max-h-60 overflow-auto rounded border border-line">
@@ -954,8 +1040,7 @@ function ProjectSupplyReport() {
           </div>
         )}
         <p className="text-[11px] text-muted">
-          扫 backend pip + frontend npm + ai-tools.yaml(MCP/扩展)→ Koi 打分 → CI 门禁。
-          BLOCK 或未审批中风险 fail build;中风险经 approvals.yaml 审批后放行。
+          {t("gw.supplyNote")}
         </p>
       </div>
     </div>
@@ -978,6 +1063,7 @@ const FALLBACK_SAMPLES: { marketplace: string; item_id: string; label: string }[
 ];
 
 function SupplyChainTester() {
+  const { t } = useI18n();
   const [meta, setMeta] = useState<SupplyChainSamples | null>(null);
   const [marketplace, setMarketplace] = useState("pypi");
   const [itemId, setItemId] = useState("");
@@ -1006,7 +1092,7 @@ function SupplyChainTester() {
       setRes(await supplyChainCheck({ marketplace: m, item_id: i }));
     } catch (e) {
       setRes(null);
-      setErr(e instanceof Error ? e.message : "请求失败");
+      setErr(e instanceof Error ? e.message : t("gw.reqFailed"));
     } finally {
       setBusy(false);
     }
@@ -1019,7 +1105,8 @@ function SupplyChainTester() {
     <div className="space-y-2">
       <div className="rounded-lg border border-dashed border-line bg-surface/60 p-3">
         <div className="mb-2 text-xs font-medium text-muted">
-          🔎 交互式 Koidex 查询台 — 任意制品(扩展 / npm / pypi / HF 模型 / MCP server)即席查风险
+          <Search className="mr-1 inline size-3.5 align-[-2px] text-muted" />
+          {t("gw.koidex")}
           {meta && (
             <span
               className={clsx(
@@ -1027,7 +1114,7 @@ function SupplyChainTester() {
                 meta.enabled ? "bg-brand-green/10 text-brand-green" : "bg-line text-muted",
               )}
             >
-              {meta.enabled ? "● Koi 已接入" : "○ 离线兜底"}
+              {meta.enabled ? t("gw.koiOn") : t("gw.koiOff")}
             </span>
           )}
         </div>
@@ -1047,7 +1134,7 @@ function SupplyChainTester() {
             value={itemId}
             onChange={(e) => setItemId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run()}
-            placeholder="制品 ID, 如 requests / upstash/context7"
+            placeholder={t("gw.itemPlaceholder")}
             className="flex-1 rounded border border-line px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
           />
           <button
@@ -1055,12 +1142,12 @@ function SupplyChainTester() {
             disabled={busy}
             className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-95 disabled:opacity-40"
           >
-            {busy ? "查询中…" : "检查"}
+            {busy ? t("gw.checking") : t("gw.check")}
           </button>
         </div>
         {/* 接口给了就用接口的, 没给用兜底那份 —— 演示台上永远有东西可点。 */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted">试试:</span>
+          <span className="text-[11px] text-muted">{t("gw.tryThese")}</span>
           {(meta?.samples?.length ? meta.samples : FALLBACK_SAMPLES).map((s) => (
             <button
               key={s.label}
@@ -1085,14 +1172,16 @@ function SupplyChainTester() {
         <div className={clsx("rounded-lg p-3 text-sm ring-1", SC_STYLE[res.state]?.ring)}>
           <div className="flex items-center gap-2">
             <span className="font-bold">{SC_STYLE[res.state]?.label}</span>
-            <span className="text-xs">{SC_STYLE[res.state]?.hint}</span>
+            <span className="text-xs">
+              {SC_STYLE[res.state] ? t(SC_STYLE[res.state].hintKey) : ""}
+            </span>
             <span
               className={clsx(
                 "ml-auto rounded px-1.5 py-0.5 text-[10px]",
                 res.source === "koi" ? "bg-card/70 text-muted" : "bg-line text-muted",
               )}
             >
-              {res.source === "koi" ? "Koi 实时" : "离线兜底"}
+              {res.source === "koi" ? t("gw.koiLive") : t("gw.koiOffline")}
             </span>
           </div>
           <div className="mt-1 text-xs text-muted">
@@ -1102,7 +1191,7 @@ function SupplyChainTester() {
 
           {risk != null && (
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[11px] text-muted">风险分</span>
+              <span className="text-[11px] text-muted">{t("gw.riskScore")}</span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-card/70">
                 <div
                   className={clsx(
@@ -1143,8 +1232,9 @@ function SupplyChainTester() {
       )}
 
       <p className="pt-1 text-[11px] text-muted">
-        模型面 Guardrail 拦<strong>坏请求</strong>; 供应链面拦<strong>坏软件</strong>。两道网关
-        一起,才覆盖 AI Native 的完整攻击面 (含 MCP server)。
+        {t("gw.twoGates1")}<strong>{t("gw.badRequests")}</strong>
+        {t("gw.twoGates2")}<strong>{t("gw.badSoftware")}</strong>
+        {t("gw.twoGates3")}
       </p>
     </div>
   );

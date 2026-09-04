@@ -13,7 +13,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "bad request" }, { status: 400 });
   }
 
-  if (typeof code !== "string" || code !== accessCode()) {
+  const expected = accessCode();
+  if (!expected) {
+    // 没配访问码 → 拒绝所有登录, 而不是回落到一个公开仓库里写着的常量。
+    console.error("[auth] DEMO_ACCESS_CODE 未配置; 拒绝全部登录。在 .env 里设一个再启动。");
+    return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  }
+  if (typeof code !== "string" || code !== expected) {
     return NextResponse.json({ ok: false, error: "invalid_code" }, { status: 401 });
   }
 

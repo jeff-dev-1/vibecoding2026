@@ -9,7 +9,14 @@ import { LogTable } from "@/components/LogTable";
 import { TimeHistogram } from "@/components/TimeHistogram";
 import { TopBar } from "@/components/TopBar";
 import { UploadBar } from "@/components/UploadBar";
-import { getJob, listJobs, type ChatTrace, type Job, type LLMBackend } from "@/lib/api";
+import {
+  getJob,
+  listJobs,
+  type ChatTrace,
+  type GatewayProvider,
+  type Job,
+  type LLMBackend,
+} from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 // initialJob: 服务端 (SSR) 预取的最近一次分析。命中时首屏直接带数据, 客户端零往返。
@@ -23,6 +30,9 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
   const [job, setJob] = useState<Job | null>(initialJob);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [backend, setBackend] = useState<LLMBackend>("deepseek");
+  // 网关 provider —— 现场可切; 切换会改变护栏所在的位置, 不只是换个 URL。
+  // 默认 Portkey (托管护栏更强, 实测能拦下 Envoy 规则漏掉的注入); Envoy 作为备用路径。
+  const [provider, setProvider] = useState<GatewayProvider>("portkey");
   // 已有 SSR 数据则不再显示骨架; 否则首屏数据回来前先占位, 而非误导性的"暂无数据"
   const [initialLoading, setInitialLoading] = useState(!initialJob);
 
@@ -154,6 +164,7 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
         job={job}
         backend={backend}
         onBackendChange={setBackend}
+        provider={provider}
         onTrace={(tr, q, n) => {
           setLastTrace(tr);
           setLastQuestion(q);
@@ -173,6 +184,8 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
         onSectionChange={setSection}
         backend={backend}
         onBackendChange={setBackend}
+        provider={provider}
+        onProviderChange={setProvider}
         trace={lastTrace}
         question={lastQuestion}
         citations={lastCitations}

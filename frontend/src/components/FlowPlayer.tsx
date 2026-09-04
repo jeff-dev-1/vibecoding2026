@@ -198,7 +198,7 @@ export function FlowPlayer({
         {/* maxWidth 卡在图的自然尺寸上: 不封顶的话, 容器一宽这个盒子就按宽高比一起拉高,
             图还是那么大, 下面白白多出一大块空。 */}
         <div
-          className="relative flex-1 self-start"
+          className="relative flex-1 self-center"
           style={{ aspectRatio: `${width} / ${height}`, minWidth, maxWidth: width }}
         >
           {/* 连线层。同一 viewBox, 坐标和下面的 HTML 节点一一对应。 */}
@@ -268,7 +268,9 @@ export function FlowPlayer({
                 style={{
                   left: `${(n.x / width) * 100}%`,
                   top: `${(n.y / height) * 100}%`,
-                  width: n.width,
+                  // 宽度也必须是画布的百分比。写成固定 px 时, 容器一窄, 位置跟着缩而宽度不缩,
+                  // 节点相对就变胖, 于是顶出分组框 —— 那不是坐标算错, 是两套单位混用。
+                  width: `${(n.width / width) * 100}%`,
                 }}
               >
                 <div className="flex items-center gap-1.5">

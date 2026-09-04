@@ -69,7 +69,13 @@ services:
       LLM_GATEWAY_URL: http://envoy-ai-gateway:8080
       LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-demo-key-not-secret}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
-      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-envoy}
+      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-portkey}
+      # Portkey 托管版 (可选的第二个网关)。护栏挂在 pc-/pg- 配置上, 命中回 446。
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_CONFIG: ${PORTKEY_CONFIG:-}
+      PORTKEY_GUARDRAIL: ${PORTKEY_GUARDRAIL:-}
+      PORTKEY_VIRTUAL_KEY: ${PORTKEY_VIRTUAL_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -97,8 +103,9 @@ services:
     environment:
       INTERNAL_BACKEND_URL: http://backend:8000
       # 登录只要一个共享访问码; DEMO_PASSWORD 是旧名, 一起传下去不破坏已有 .env。
-      DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-${DEMO_PASSWORD:-vibecoding2026}}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
+      # 没有默认值 —— 未配置时前端拒绝全部登录 (见 frontend/src/lib/session.ts)
+      DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
     ports:

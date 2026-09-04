@@ -21,7 +21,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
-import { chat, type ChatResponse, type ChatTrace, type Job, type LLMBackend } from "@/lib/api";
+import {
+  chat,
+  type ChatResponse,
+  type ChatTrace,
+  type GatewayProvider,
+  type Job,
+  type LLMBackend,
+} from "@/lib/api";
 import { AnswerTrace } from "./AnswerTrace";
 import { Markdown } from "./Markdown";
 import { ScenarioCharts } from "./ScenarioCharts";
@@ -97,6 +104,8 @@ type Props = {
   job?: Job | null;
   backend: LLMBackend;
   onBackendChange: (b: LLMBackend) => void;
+  /** 走哪个网关 —— 由控制面选定, 提问时随请求带过去。 */
+  provider: GatewayProvider;
   /** 每次拿到带 trace 的回答就往上抛, 控制面的回放器要用它。 */
   onTrace: (t: ChatTrace, question: string, citations: number) => void;
   /** 「查看本次链路回放」—— 直接跳到控制面的回放那一项。 */
@@ -110,6 +119,7 @@ export function AiAssistantDrawer({
   job,
   backend,
   onBackendChange,
+  provider,
   onTrace,
   onOpenReplay,
 }: Props) {
@@ -139,6 +149,7 @@ export function AiAssistantDrawer({
         scenario: args.scenarioId,
         // 让模型用读者正在看的语言作答 —— 界面切成 English 而答案还是中文是最扎眼的漏译。
         lang,
+        provider,
       });
       setResp(r);
       setScenario(args.scenarioId ?? null);
@@ -163,10 +174,7 @@ export function AiAssistantDrawer({
       <header className="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
         <div className="flex items-center gap-2.5">
           <Sparkles className="size-5 shrink-0 text-primary" />
-          <div>
-            <h2 className="text-sm font-semibold text-ink">{t("ai.title")}</h2>
-            <div className="text-[11px] text-muted">{t("ai.subtitle")}</div>
-          </div>
+          <h2 className="text-sm font-semibold text-ink">{t("ai.title")}</h2>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -374,9 +382,6 @@ export function AiAssistantDrawer({
           >
             {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
           </button>
-        </div>
-        <div className="mt-1.5 text-[10px] text-muted">
-          {t("ai.footerHint")} {backend} {t("ai.footerHint2")}
         </div>
       </footer>
     </aside>

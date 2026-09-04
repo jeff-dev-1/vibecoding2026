@@ -155,6 +155,10 @@ class ChatRequest(BaseModel):
     # 回答语言 —— 跟着读者的界面语言走。缺省简体, 和前端的回落规则一致。
     # 只影响散文的语言; 日志原文/路径/IP/状态码这些证据永远不翻译。
     lang: AnswerLang = DEFAULT_ANSWER_LANG
+    # 网关 provider —— 现场可切, 不用改 .env 重启。留空则用启动时的默认值。
+    # 切换会连带改变护栏的位置: envoy 是自建数据面里的 Lua filter,
+    # portkey 是托管控制面上的 guardrail 配置。界面要如实反映这一点。
+    provider: Literal["envoy", "portkey"] | None = None
 
 
 class Citation(BaseModel):

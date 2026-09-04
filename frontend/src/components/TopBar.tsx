@@ -50,9 +50,6 @@ export function TopBar({
       <span className="flex min-w-0 items-center gap-2.5">
         <ScanSearch className="size-6 shrink-0 text-primary" />
         <span className="truncate text-base font-semibold tracking-tight">{t("app.name")}</span>
-        <span className="hidden font-mono text-[11px] uppercase tracking-wider text-muted lg:inline">
-          vibe coding demo
-        </span>
       </span>
 
       <div className="flex items-center gap-2">

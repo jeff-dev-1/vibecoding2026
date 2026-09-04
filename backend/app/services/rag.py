@@ -48,6 +48,7 @@ class RagResult:
     gateway_url: str = ""
     routing_header: str = ""
     structured_used: bool = False
+    provider: str = "envoy"
 
 
 async def _load_structured(log_id: UUID | None) -> str:
@@ -158,6 +159,7 @@ async def answer(
     log_id: UUID | None = None,
     backend: Literal["deepseek", "qwen"] = "deepseek",
     lang: str = "zh-Hans",
+    provider: str | None = None,
 ) -> RagResult:
     t0 = time.monotonic()
     structured = await _load_structured(log_id)
@@ -173,7 +175,7 @@ async def answer(
             retrieval_ms=retrieval_ms,
         )
     messages = _compose(question, structured, chunks, lang)
-    res = await chat(messages, backend=backend)
+    res = await chat(messages, backend=backend, provider=provider)
     return RagResult(
         answer=res.text,
         chunks=chunks,
@@ -185,4 +187,5 @@ async def answer(
         gateway_url=res.gateway_url,
         routing_header=res.routing_header,
         structured_used=bool(structured),
+        provider=res.provider,
     )

@@ -21,7 +21,7 @@ import {
 } from "./GatewayPanel";
 import { DEMO_QUESTION, DEMO_TRACE, ReplayFlow } from "./ReplayFlow";
 import { useI18n, type Key } from "@/lib/i18n";
-import type { ChatTrace, LLMBackend } from "@/lib/api";
+import type { ChatTrace, GatewayProvider, LLMBackend } from "@/lib/api";
 
 /**
  * 控制面 —— 管理面的家。
@@ -80,6 +80,9 @@ export type ControlPlaneProps = {
   onSectionChange: (s: SectionId) => void;
   backend: LLMBackend;
   onBackendChange: (b: LLMBackend) => void;
+  /** 网关 provider —— 和 backend 一样是"这次请求怎么走"的一部分, 所以状态提到页面层。 */
+  provider: GatewayProvider;
+  onProviderChange: (p: GatewayProvider) => void;
   /** 最近一次真实提问的链路。为空时回放器放演示剧本, 并在顶部标注。 */
   trace: ChatTrace | null;
   question: string;
@@ -93,6 +96,8 @@ export function ControlPlane({
   onSectionChange,
   backend,
   onBackendChange,
+  provider,
+  onProviderChange,
   trace,
   question,
   citations,
@@ -197,20 +202,26 @@ export function ControlPlane({
               />
             </div>
           ) : (
-            <div
-              className={clsx(
-                "px-5 py-5 pb-10",
-                // 供应链页里有一张流程图, 和回放一样需要整块宽度; 其余给阅读宽度。
-                section === "supply" ? "min-w-0" : "mx-auto max-w-5xl",
-              )}
-            >
+            // 内容不足一屏时整体居中, 而不是顶在上面、底下空一大片。
+            // my-auto 在有余量时居中, 内容超高时退回正常流 —— justify-center 会裁掉顶部。
+            <div className="flex min-h-full flex-col px-5 py-5">
+              <div
+                className={clsx(
+                  "my-auto w-full",
+                  // 供应链页里有一张流程图, 和回放一样需要整块宽度; 其余给阅读宽度。
+                  section === "supply" ? "min-w-0" : "mx-auto max-w-5xl",
+                )}
+              >
               {section === "models" && (
                 <ModelsView backend={backend} onBackendChange={onBackendChange} />
               )}
-              {section === "guardrail" && <GuardrailView />}
+              {section === "guardrail" && (
+                <GuardrailView provider={provider} onProviderChange={onProviderChange} />
+              )}
               {section === "supply" && <SupplyChainView />}
               {section === "assurance" && <AssuranceView />}
               {section === "prompts" && <PromptsView />}
+              </div>
             </div>
           )}
         </div>

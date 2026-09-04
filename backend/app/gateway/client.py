@@ -13,6 +13,7 @@ import json
 import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -43,19 +44,50 @@ _PORTKEY_ROUTES: dict[str, dict[str, str | None]] = {
 }
 
 
-def _build_request(backend: LLMBackend) -> tuple[str, dict[str, str]]:
-    """按 GATEWAY_PROVIDER 选 base URL + header 风格。业务代码不变, 只换这一层。"""
-    if settings.gateway_provider == "portkey":
+def _build_request(backend: LLMBackend, provider: str) -> tuple[str, dict[str, str]]:
+    """按 provider 选 base URL + header 风格。业务代码不变, 只换这一层。
+
+    两条路径的差别不只是 URL, 值得写清楚 —— 演示要讲的正是这个:
+
+      envoy    自建数据面。厂商 key 由网关在 upstream 注入, backend 不持有;
+               护栏是 Envoy 里的 Lua filter, 命中直接 400 + x-guardrail 头,
+               请求根本到不了厂商。
+      portkey  托管控制面。护栏 (可接 Prisma AIRS) 挂在 pc-/pg- 配置上,
+               命中回 446 (DENY), 标记但放行回 246。
+
+    一处值得说清楚的差异: 这个配置下 **Portkey 路径的 backend 是持有厂商 key 的**
+    (随 Authorization 透传)。要做到和 Envoy 一样"backend 不碰 key", 需要在 Portkey
+    侧配 virtual key, 把凭证存到厂商那边 —— 配了 PORTKEY_VIRTUAL_KEY 就走那条路。
+    别把两条路径说成一样安全, 它们在"谁持有 key"这一点上确实不同。
+    """
+    if provider == "portkey":
         route = _PORTKEY_ROUTES.get(backend, _PORTKEY_ROUTES["deepseek"])
-        key = settings.deepseek_api_key if backend == "deepseek" else settings.qwen_api_key
         headers = {
             "Content-Type": "application/json",
+            "x-portkey-api-key": settings.portkey_api_key,
+            # provider 必须给 —— 只给 config 时 Portkey 会回 400:
+            # "Either x-portkey-provider needs to be passed. Or the x-portkey-config
+            #  header should have a valid config with provider details in it."
+            # 也就是说 config 只带路由/护栏, 不带 provider 身份。
             "x-portkey-provider": route["provider"] or "openai",
-            "Authorization": f"Bearer {key}",
+            # trace id 让这次调用能在 Portkey 控制台里被找到 —— 界面上的 trace 和
+            # 厂商后台的记录得能对上, 否则"可观测"只是本地自说自话。
+            "x-portkey-trace-id": f"alad-{uuid4().hex[:16]}",
         }
         if route["custom_host"]:
             headers["x-portkey-custom-host"] = route["custom_host"]
-        return f"{settings.portkey_url}/v1/chat/completions", headers
+        # 护栏挂在 config 上; 不带 config 就是"不带护栏"那条对照路径。
+        if settings.portkey_config:
+            headers["x-portkey-config"] = settings.portkey_config
+        # 凭证二选一: virtual key (存在 Portkey 侧, backend 不碰 key) 优先;
+        # 没配就把厂商 key 透传过去。
+        if settings.portkey_virtual_key:
+            headers["x-portkey-virtual-key"] = settings.portkey_virtual_key
+        else:
+            key = settings.deepseek_api_key if backend == "deepseek" else settings.qwen_api_key
+            headers["Authorization"] = f"Bearer {key}"
+        return f"{settings.portkey_url}/chat/completions", headers
+
     # 默认 Envoy: key 在网关注入, backend 只带 demo bearer + 路由头
     headers = {
         "Authorization": f"Bearer {settings.gateway_api_key}",
@@ -80,6 +112,8 @@ class CompletionResult:
     # 实际打到的网关地址与路由头, 用于向前端说明"这一跳去了哪、凭什么路由的"。
     gateway_url: str = ""
     routing_header: str = ""
+    # 这次调用实际走的 provider (envoy | portkey) —— 单请求可覆盖启动默认值。
+    provider: str = "envoy"
 
 
 class GatewayError(RuntimeError):
@@ -97,6 +131,7 @@ async def chat(
     backend: LLMBackend = "deepseek",
     structured: bool = False,
     temperature: float = 0.2,
+    provider: str | None = None,
 ) -> CompletionResult:
     """Send chat to the Gateway.
 
@@ -112,7 +147,8 @@ async def chat(
     if structured:
         payload["response_format"] = {"type": "json_object"}
 
-    url, headers = _build_request(backend)
+    active = provider or settings.gateway_provider
+    url, headers = _build_request(backend, active)
 
     tracer = get_tracer()
     t0 = time.monotonic()
@@ -121,24 +157,28 @@ async def chat(
             resp = await client.post(url, json=payload, headers=headers)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
+    # 两个网关表达"护栏拦下了"的方式不同, 在这里归一化成一个 guardrail 标记:
+    #   Envoy    400 + x-guardrail: prompt-injection-blocked   (Lua filter 直接短路)
+    #   Portkey  446                                            (托管护栏 DENY)
+    #            246 是"标记了但放行", 属于 2xx, 不在这个分支。
+    guardrail = resp.headers.get("x-guardrail")
+    if active == "portkey" and resp.status_code == 446:
+        guardrail = "portkey-guardrail-denied"
+
     if resp.status_code != 200:
         observability.record(
-            provider=settings.gateway_provider, backend=backend, model=model,
+            provider=active, backend=backend, model=model,
             prompt_tokens=0, completion_tokens=0, latency_ms=latency_ms,
-            ok=False, guardrail=resp.headers.get("x-guardrail"),
+            ok=False, guardrail=guardrail,
         )
-        raise GatewayError(
-            status=resp.status_code,
-            body=resp.text,
-            guardrail=resp.headers.get("x-guardrail"),
-        )
+        raise GatewayError(status=resp.status_code, body=resp.text, guardrail=guardrail)
 
     data = resp.json()
     choice = data["choices"][0]
     text = choice["message"]["content"]
     usage = data.get("usage", {})
     observability.record(
-        provider=settings.gateway_provider, backend=backend,
+        provider=active, backend=backend,
         model=data.get("model", model),
         prompt_tokens=usage.get("prompt_tokens", 0),
         completion_tokens=usage.get("completion_tokens", 0),
@@ -153,7 +193,8 @@ async def chat(
         raw=data,
         latency_ms=latency_ms,
         gateway_url=url,
-        routing_header=headers.get("X-LLM-Backend", ""),
+        routing_header=headers.get("X-LLM-Backend", "") or headers.get("x-portkey-config", ""),
+        provider=active,
     )
 
 

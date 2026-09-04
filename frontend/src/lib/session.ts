@@ -76,10 +76,20 @@ export async function verify(value: string | undefined, secret: string): Promise
 export function sessionSecret(): string {
   const explicit = process.env.SESSION_SECRET;
   if (explicit) return explicit;
-  return `derived:${accessCode()}`;
+  // 没配密钥时从访问码派生 —— 能跑, 但强度取决于访问码。对外部署必须显式配置。
+  return `derived:${accessCode() ?? "unconfigured"}`;
 }
 
-/** 访问码。DEMO_ACCESS_CODE 优先; DEMO_PASSWORD 是旧名, 留着不破坏已有部署的 .env。 */
-export function accessCode(): string {
-  return process.env.DEMO_ACCESS_CODE || process.env.DEMO_PASSWORD || "vibecoding2026";
+/**
+ * 访问码。DEMO_ACCESS_CODE 优先; DEMO_PASSWORD 是旧名, 留着不破坏已有部署的 .env。
+ *
+ * 没配就返回 null —— 调用方据此拒绝所有登录 (fail closed)。
+ *
+ * 这里曾经回落到一个写死的 "vibecoding2026"。那个值同时出现在公开仓库的 .env.example 里,
+ * 而这个 demo 是公网可达的 —— 等于门锁和钥匙一起发布。回落到一个已知常量的"方便",
+ * 在任何对外可达的部署上都是一道敞开的门, 所以现在宁可登不进去, 也不放一个人人都知道的码。
+ */
+export function accessCode(): string | null {
+  const code = process.env.DEMO_ACCESS_CODE || process.env.DEMO_PASSWORD;
+  return code && code.trim() ? code : null;
 }

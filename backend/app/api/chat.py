@@ -44,7 +44,7 @@ async def query(req: ChatRequest) -> ChatResponse:
                 total_ms=guard_ms,
                 backend=req.backend,
                 model="guarded",
-                provider=settings.gateway_provider,
+                provider=req.provider or settings.gateway_provider,
             ),
         )
 
@@ -66,16 +66,21 @@ async def query(req: ChatRequest) -> ChatResponse:
             log_id=req.log_id,
             backend=req.backend,
             lang=req.lang,
+            provider=req.provider,
         )
     except GatewayError as e:
-        if e.guardrail == "prompt-injection-blocked":
+        if e.guardrail in ("prompt-injection-blocked", "portkey-guardrail-denied"):
+            # 说清楚是**哪个**网关拦的, 别用一句写死的话盖住两条不同的路径:
+            #   envoy    自建 Lua filter, HTTP 400
+            #   portkey  托管护栏 (可接 Prisma AIRS), HTTP 446
+            active_provider = req.provider or settings.gateway_provider
             return ChatResponse(
                 answer="",
                 citations=[],
                 model="gateway-guarded",
                 backend=req.backend,
                 blocked=True,
-                block_reason="gateway: prompt-injection-blocked",
+                block_reason=f"{active_provider} gateway: {e.guardrail} (HTTP {e.status})",
                 trace=ChatTrace(
                     steps=[
                         TraceStep(
@@ -84,13 +89,17 @@ async def query(req: ChatRequest) -> ChatResponse:
                         ),
                         TraceStep(
                             id="gateway", ok=False, ms=0, summary="prompt-injection-blocked",
-                            detail={"guardrail": e.guardrail, "status": e.status},
+                            detail={
+                                "guardrail": e.guardrail,
+                                "status": e.status,
+                                "provider": req.provider or settings.gateway_provider,
+                            },
                         ),
                     ],
                     total_ms=guard_ms,
                     backend=req.backend,
                     model="gateway-guarded",
-                    provider=settings.gateway_provider,
+                    provider=req.provider or settings.gateway_provider,
                 ),
             )
         raise HTTPException(502, f"upstream error: {e.status}") from e
@@ -106,6 +115,19 @@ async def query(req: ChatRequest) -> ChatResponse:
         )
         for c in result.chunks
     ]
+
+    # 网关那一跳的字段名跟着 provider 走 —— Portkey 路径上没有 X-LLM-Backend 这个头,
+    # 把 config id 塞进一个叫 X-LLM-Backend 的字段里, 回放就在骗人。
+    gw_detail: dict[str, object] = {
+        "provider": result.provider,
+        "url": result.gateway_url,
+    }
+    if result.provider == "portkey":
+        gw_detail["x-portkey-config"] = result.routing_header or "(未配置)"
+        gw_detail["guardrail"] = "Portkey 托管护栏 (446 = DENY)"
+    else:
+        gw_detail["X-LLM-Backend"] = result.routing_header or "(unset → default)"
+        gw_detail["X-LLM-Purpose"] = "log-analysis"
 
     steps = [
         TraceStep(
@@ -135,12 +157,7 @@ async def query(req: ChatRequest) -> ChatResponse:
             # 网关的时间含在 llm 那一跳里 (它就是同一次 HTTP 往返), 这里不重复计。
             ms=0,
             summary=result.routing_header or "default route",
-            detail={
-                "provider": settings.gateway_provider,
-                "url": result.gateway_url,
-                "X-LLM-Backend": result.routing_header or "(unset → default)",
-                "X-LLM-Purpose": "log-analysis",
-            },
+            detail=gw_detail,
         ),
         TraceStep(
             id="llm",
@@ -170,7 +187,7 @@ async def query(req: ChatRequest) -> ChatResponse:
             total_ms=guard_ms + result.retrieval_ms + result.llm_ms,
             backend=req.backend,
             model=result.model,
-            provider=settings.gateway_provider,
+            provider=result.provider,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
         ),

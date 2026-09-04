@@ -5,8 +5,10 @@ import {
   GitBranch,
   Hammer,
   PackageCheck,
+  Radar,
   Rocket,
   ScanLine,
+  Swords,
   ServerCog,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -40,53 +42,70 @@ import { useI18n } from "@/lib/i18n";
  * 保留在图的末端并明确标注 —— 演示要讲的正是这两者的区别, 而不是假装它已经改好了。
  */
 
-const W = 1040;
-const H = 410;
+const W = 1400;
+const H = 420;
 
 type Mode = "pass" | "block";
 
-// 三段水平流, 而不是绕一圈:
-//   上排  CI (checkout → 门禁)
-//   下排  构建 (install → build → push)
-//   右上  运行时 (deploy → 审计)
-// 之前 build 在左下、push 在右上, 那条连线横穿整张图, 还从 install 身上压过去。
+// 两排水平流 + 右侧运行时, 三个框都在同一套网格上:
+//   上排   CI      checkout → Koi 门禁
+//   下排左 构建     install → build → push
+//   下排右 运行时   deploy → 审计
+//
+// 运行时从右上挪到了右下, 和构建排同一行 —— 这样 push → deploy 是一条近乎水平的短线,
+// 而不是从左下斜穿到右上的长线。CI 框和构建框同宽同起点, 上下对齐, 中间不再空一大块。
 const GROUPS = (t: (k: any) => string): FlowGroup[] => [
-  { id: "ci", x: 40, y: 30, w: 700, h: 148, label: t("sc.groupCi"), tone: "supply" },
-  { id: "artifact", x: 40, y: 240, w: 758, h: 148, label: t("sc.groupArtifact"), tone: "app" },
-  { id: "runtime", x: 800, y: 30, w: 236, h: 148, label: t("sc.groupRuntime"), tone: "gateway" },
+  { id: "ci", x: 40, y: 26, w: 760, h: 146, label: t("sc.groupCi"), tone: "supply" },
+  { id: "artifact", x: 40, y: 212, w: 760, h: 150, label: t("sc.groupArtifact"), tone: "app" },
+  { id: "runtime", x: 850, y: 212, w: 250, h: 150, label: t("sc.groupRuntime"), tone: "gateway" },
 ];
 
 function nodes(mode: Mode): FlowNode[] {
   return [
     {
-      id: "checkout", x: 165, y: 108, label: "Checkout", icon: GitBranch, badge: "CI",
+      id: "checkout", x: 160, y: 120, label: "Checkout", icon: GitBranch, badge: "CI",
       tags: ["git"], tone: "supply", width: 190,
     },
-    // 门禁在 install 之前 —— 这张图想说的就是这一点。
+    // 门禁在 install 之前 —— 这张图想说的就是这一点。它落在 CI 框和构建框的边界上,
+    // "在 install 之前"由框线本身说出来。
     {
-      id: "koi", x: 480, y: 108, label: "Koi Gate", icon: ScanLine,
+      id: "koi", x: 430, y: 120, label: "Koi Gate", icon: ScanLine,
       badge: mode === "block" ? "BLOCK" : "PASS",
       tags: ["pip", "npm", "mcp"],
       tone: mode === "block" ? "danger" : "supply", width: 214,
     },
     {
-      id: "install", x: 168, y: 320, label: "pip / npm install", icon: Boxes, badge: "INSTALL",
+      id: "install", x: 730, y: 120, label: "pip / npm install", icon: Boxes, badge: "INSTALL",
       tags: ["setup.py", "postinstall"], tone: "app", width: 230,
     },
     {
-      id: "build", x: 432, y: 320, label: "docker build", icon: Hammer, badge: "BUILD",
+      id: "build", x: 990, y: 120, label: "docker build", icon: Hammer, badge: "BUILD",
+      tone: "app", width: 180,
+    },
+    {
+      id: "push", x: 1230, y: 120, label: "registry push", icon: PackageCheck, badge: "PUSH",
       tone: "app", width: 190,
     },
+    // 下排 = Jenkinsfile 里 Deploy 之后那几个 stage, 顺序照实画。
+    //
+    // 红队和渗透必须有个跑着的目标 (一个打模型行为, 一个打 HTTP 面), 所以不可能在
+    // build 之前。但"需要跑着"不等于"必须在生产上跑": 正常应该部署到预发 → 跑这两关 →
+    // 过了才 promote 到生产。当前流水线只有一个环境, 测的是已经在服务的那一份 ——
+    // 抓到问题时版本已经上线, 和 Koi 后置是同一个结构性问题。帧说明里写清楚了。
     {
-      id: "push", x: 668, y: 320, label: "registry push", icon: PackageCheck, badge: "PUSH",
-      tone: "app", width: 190,
+      id: "deploy", x: 180, y: 320, label: "deploy", icon: Rocket, badge: "DEPLOY",
+      tone: "gateway", width: 190,
     },
     {
-      id: "deploy", x: 918, y: 78, label: "deploy", icon: Rocket, badge: "DEPLOY",
-      tone: "gateway", width: 196,
+      id: "redteam", x: 490, y: 320, label: "red team", icon: Swords, badge: "GATE",
+      tags: ["injection", "jailbreak"], tone: "gateway", width: 200,
     },
     {
-      id: "audit", x: 918, y: 146, label: "post-deploy audit", icon: ServerCog, badge: "REPORT",
+      id: "pentest", x: 800, y: 320, label: "pentest (DAST)", icon: Radar, badge: "GATE",
+      tags: ["zap", "nuclei"], tone: "gateway", width: 200,
+    },
+    {
+      id: "audit", x: 1130, y: 320, label: "post-deploy audit", icon: ServerCog, badge: "REPORT",
       tone: "gateway", width: 214,
     },
   ];
@@ -98,8 +117,10 @@ const EDGES: FlowEdge[] = [
   { id: "install-build", from: "install", to: "build" },
   { id: "build-push", from: "build", to: "push" },
   { id: "push-deploy", from: "push", to: "deploy" },
-  // 后置审计是旁路: 它不阻断, 只记录实际落地的是什么。
-  { id: "deploy-audit", from: "deploy", to: "audit", dashed: true },
+  { id: "deploy-redteam", from: "deploy", to: "redteam" },
+  { id: "redteam-pentest", from: "redteam", to: "pentest" },
+  // 后置审计是旁路: 它不阻断, 只记录实际落地的是什么 —— 所以画成虚线。
+  { id: "pentest-audit", from: "pentest", to: "audit", dashed: true },
 ];
 
 function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
@@ -167,11 +188,31 @@ function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
     {
       key: "deploy", title: t("sc.f.deploy"), ok: true,
       nodes: ["push", "deploy"], edges: ["push-deploy"],
-      rows: [["stage", "Deploy to VM"], ["then", "Health · Smoke · Red Team · Pentest"]],
+      rows: [["stage", "Deploy to VM"], ["then", "Health · Smoke"]],
+    },
+    {
+      key: "redteam", title: t("sc.f.redteam"), ok: true,
+      nodes: ["deploy", "redteam"], edges: ["deploy-redteam"],
+      rows: [
+        ["stage", "Red Team"],
+        ["scope", t("sc.redteamScope")],
+        ["blocking", t("sc.failsCi")],
+        ["should be", t("sc.shouldBeStaging")],
+      ],
+    },
+    {
+      key: "pentest", title: t("sc.f.pentest"), ok: true,
+      nodes: ["redteam", "pentest"], edges: ["redteam-pentest"],
+      rows: [
+        ["stage", "Pentest (DAST)"],
+        ["scope", t("sc.pentestScope")],
+        ["blocking", t("sc.failsCi")],
+        ["should be", t("sc.shouldBeStaging")],
+      ],
     },
     {
       key: "audit", title: t("sc.f.audit"), ok: true,
-      nodes: ["deploy", "audit"], edges: ["deploy-audit"],
+      nodes: ["pentest", "audit"], edges: ["pentest-audit"],
       rows: [
         ["stage", "Supply Chain Gate"],
         ["scope", t("sc.auditScope")],
@@ -200,7 +241,7 @@ export function SupplyChainFlow() {
       edges={EDGES}
       frames={frames}
       resetKey={mode}
-      minWidth={760}
+      minWidth={1120}
       header={
         <div className="flex flex-wrap items-center gap-3">
           {/* 两个剧本: 全部放行 / 命中一个高危包。切换即重播。 */}
