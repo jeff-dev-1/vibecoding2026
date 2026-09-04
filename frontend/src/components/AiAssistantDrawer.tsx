@@ -280,8 +280,11 @@ export function AiAssistantDrawer({
                   </div>
                 )}
 
-                {/* 图表 — 从结构化数据出 */}
-                {job && <ScenarioCharts job={job} />}
+                {/* 图表只在场景化提问时出。
+                    自由提问 (比如"这条 PII 会怎么处理") 和图表无关, 却照样弹出一屏
+                    状态码环图和 TOP 路径 —— 那是噪声, 会把真正的答案挤到屏幕外面。
+                    场景卡本来就是"给我看这类图"的意思, 图跟着场景走才对得上。 */}
+                {job && scenario && <ScenarioCharts job={job} />}
 
                 {/* LLM 文字结论 */}
                 <Markdown text={resp.answer} />

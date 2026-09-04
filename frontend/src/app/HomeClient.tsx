@@ -94,8 +94,10 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
   const entries = job?.sample_entries ?? [];
 
   return (
+    // 整页不滚, 只有内容区滚 —— 顶栏和上传条固定在上面。
+    // 演示时经常要一边看报告一边点"上传"/"刷新", 它们跟着内容滚走就得来回翻。
     <div
-      className="min-h-screen transition-[margin] duration-300"
+      className="flex h-screen flex-col overflow-hidden transition-[margin] duration-300"
       style={{ marginRight: drawerOpen ? 460 : 0 }}
     >
       <TopBar
@@ -106,8 +108,9 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
       />
       <UploadBar onUploaded={setJobId} currentJob={job} onRefresh={refresh} />
 
-      {/* 业务面 —— 只有"这份日志里有什么"。治理相关的一切都在控制面浮层里。 */}
-      <main className="space-y-4 px-6 py-4">
+      {/* 业务面 —— 只有"这份日志里有什么"。治理相关的一切都在控制面浮层里。
+          自己滚, 所以滚动条落在内容区右侧, 而不是整页最外层。 */}
+      <main className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
         {initialLoading && !job ? (
           <DataSkeleton />
         ) : (

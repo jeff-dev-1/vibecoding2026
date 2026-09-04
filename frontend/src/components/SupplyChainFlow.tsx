@@ -8,6 +8,7 @@ import {
   Radar,
   Rocket,
   ScanLine,
+  ShieldCheck,
   Swords,
   ServerCog,
 } from "lucide-react";
@@ -42,85 +43,99 @@ import { useI18n } from "@/lib/i18n";
  * 保留在图的末端并明确标注 —— 演示要讲的正是这两者的区别, 而不是假装它已经改好了。
  */
 
-const W = 1400;
-const H = 420;
+const W = 1420;
+const H = 470;
 
 type Mode = "pass" | "block";
 
-// 两排水平流 + 右侧运行时, 三个框都在同一套网格上:
-//   上排   CI      checkout → Koi 门禁
-//   下排左 构建     install → build → push
-//   下排右 运行时   deploy → 审计
-//
-// 运行时从右上挪到了右下, 和构建排同一行 —— 这样 push → deploy 是一条近乎水平的短线,
-// 而不是从左下斜穿到右上的长线。CI 框和构建框同宽同起点, 上下对齐, 中间不再空一大块。
+/**
+ * 两道闸, 卡在不同的地方 —— 这是整张图要说的事。
+ *
+ *   Koi 门禁      卡 install。恶意包是在 pip/npm install 时执行的, 门禁必须在它之前。
+ *   红队 + 渗透   卡 promote。两者都需要一个跑着的目标 (一个打模型行为, 一个打 HTTP 面),
+ *                所以不可能在 build 之前; 但"需要跑着"不等于"必须在生产上跑" ——
+ *                在预发上跑, 卡的是"能不能上生产", 而不是"能不能部署"。
+ *
+ * 这样安排的一个实际好处: 没有哪道闸会让你连预发都部署不上去, 演示照跑, 生产照卡。
+ *
+ * 这张图画的是推荐架构, 不是某一份 Jenkinsfile 的现状。
+ */
 const GROUPS = (t: (k: any) => string): FlowGroup[] => [
-  { id: "ci", x: 40, y: 26, w: 760, h: 146, label: t("sc.groupCi"), tone: "supply" },
-  { id: "artifact", x: 40, y: 212, w: 760, h: 150, label: t("sc.groupArtifact"), tone: "app" },
-  { id: "runtime", x: 850, y: 212, w: 250, h: 150, label: t("sc.groupRuntime"), tone: "gateway" },
+  { id: "ci", x: 36, y: 28, w: 470, h: 178, label: t("sc.groupCi"), tone: "supply" },
+  { id: "artifact", x: 546, y: 28, w: 838, h: 178, label: t("sc.groupArtifact"), tone: "app" },
+  { id: "staging", x: 36, y: 250, w: 900, h: 178, label: t("sc.groupStaging"), tone: "gateway" },
+  { id: "prod", x: 976, y: 250, w: 408, h: 178, label: t("sc.groupProd"), tone: "vendor" },
 ];
 
 function nodes(mode: Mode): FlowNode[] {
   return [
     {
-      id: "checkout", x: 160, y: 120, label: "Checkout", icon: GitBranch, badge: "CI",
-      tags: ["git"], tone: "supply", width: 190,
+      id: "checkout", x: 148, y: 122, label: "Checkout", icon: GitBranch, badge: "CI",
+      tags: ["git"], tone: "supply", width: 180,
     },
-    // 门禁在 install 之前 —— 这张图想说的就是这一点。它落在 CI 框和构建框的边界上,
-    // "在 install 之前"由框线本身说出来。
+    // 第一道闸: 卡 install。命中就到此为止, 后面几步都不会发生。
     {
-      id: "koi", x: 430, y: 120, label: "Koi Gate", icon: ScanLine,
+      id: "koi", x: 388, y: 122, label: "Koi Gate", icon: ScanLine,
       badge: mode === "block" ? "BLOCK" : "PASS",
       tags: ["pip", "npm", "mcp"],
-      tone: mode === "block" ? "danger" : "supply", width: 214,
+      tone: mode === "block" ? "danger" : "supply", width: 196,
+    },
+    // 门禁落在 CI 框和构建框的边界上 —— "在 install 之前"由框线本身说出来。
+    {
+      id: "install", x: 672, y: 122, label: "pip / npm install", icon: Boxes, badge: "INSTALL",
+      tags: ["setup.py", "postinstall"], tone: "app", width: 214,
     },
     {
-      id: "install", x: 730, y: 120, label: "pip / npm install", icon: Boxes, badge: "INSTALL",
-      tags: ["setup.py", "postinstall"], tone: "app", width: 230,
+      id: "build", x: 922, y: 122, label: "docker build", icon: Hammer, badge: "BUILD",
+      tone: "app", width: 176,
     },
     {
-      id: "build", x: 990, y: 120, label: "docker build", icon: Hammer, badge: "BUILD",
-      tone: "app", width: 180,
+      id: "push", x: 1160, y: 122, label: "registry push", icon: PackageCheck, badge: "PUSH",
+      tone: "app", width: 182,
+    },
+    // 预发: 先有个跑着的东西, 才谈得上打它。
+    {
+      id: "staging", x: 152, y: 344, label: "deploy → staging", icon: Rocket, badge: "STAGING",
+      tone: "gateway", width: 202,
     },
     {
-      id: "push", x: 1230, y: 120, label: "registry push", icon: PackageCheck, badge: "PUSH",
-      tone: "app", width: 190,
-    },
-    // 下排 = Jenkinsfile 里 Deploy 之后那几个 stage, 顺序照实画。
-    //
-    // 红队和渗透必须有个跑着的目标 (一个打模型行为, 一个打 HTTP 面), 所以不可能在
-    // build 之前。但"需要跑着"不等于"必须在生产上跑": 正常应该部署到预发 → 跑这两关 →
-    // 过了才 promote 到生产。当前流水线只有一个环境, 测的是已经在服务的那一份 ——
-    // 抓到问题时版本已经上线, 和 Koi 后置是同一个结构性问题。帧说明里写清楚了。
-    {
-      id: "deploy", x: 180, y: 320, label: "deploy", icon: Rocket, badge: "DEPLOY",
-      tone: "gateway", width: 190,
+      id: "redteam", x: 404, y: 344, label: "red team", icon: Swords, badge: "GATE",
+      tags: ["injection", "jailbreak"], tone: "gateway", width: 188,
     },
     {
-      id: "redteam", x: 490, y: 320, label: "red team", icon: Swords, badge: "GATE",
-      tags: ["injection", "jailbreak"], tone: "gateway", width: 200,
+      id: "pentest", x: 646, y: 344, label: "pentest (DAST)", icon: Radar, badge: "GATE",
+      tags: ["zap", "nuclei"], tone: "gateway", width: 192,
+    },
+    // 第二道闸: 卡 promote, 不卡 deploy。
+    {
+      id: "promote", x: 864, y: 344, label: "promote?", icon: ShieldCheck, badge: "GATE",
+      tone: "gateway", width: 148,
     },
     {
-      id: "pentest", x: 800, y: 320, label: "pentest (DAST)", icon: Radar, badge: "GATE",
-      tags: ["zap", "nuclei"], tone: "gateway", width: 200,
+      id: "prod", x: 1110, y: 344, label: "production", icon: Rocket, badge: "PROD",
+      tone: "vendor", width: 174,
     },
     {
-      id: "audit", x: 1130, y: 320, label: "post-deploy audit", icon: ServerCog, badge: "REPORT",
-      tone: "gateway", width: 214,
+      id: "audit", x: 1310, y: 344, label: "audit", icon: ServerCog, badge: "REPORT",
+      tone: "vendor", width: 132,
     },
   ];
 }
 
 const EDGES: FlowEdge[] = [
   { id: "checkout-koi", from: "checkout", to: "koi" },
+  // 穿过 CI 框和构建框的边界 —— 门禁就卡在这条线上。
   { id: "koi-install", from: "koi", to: "install" },
   { id: "install-build", from: "install", to: "build" },
   { id: "build-push", from: "build", to: "push" },
-  { id: "push-deploy", from: "push", to: "deploy" },
-  { id: "deploy-redteam", from: "deploy", to: "redteam" },
+  // 唯一一条跨排的线: 制品做好了, 去预发跑起来。
+  { id: "push-staging", from: "push", to: "staging" },
+  { id: "staging-redteam", from: "staging", to: "redteam" },
   { id: "redteam-pentest", from: "redteam", to: "pentest" },
-  // 后置审计是旁路: 它不阻断, 只记录实际落地的是什么 —— 所以画成虚线。
-  { id: "pentest-audit", from: "pentest", to: "audit", dashed: true },
+  { id: "pentest-promote", from: "pentest", to: "promote" },
+  { id: "promote-prod", from: "promote", to: "prod" },
+  // 部署后审计是旁路: 不阻断, 只记录实际落地的是什么。
+  { id: "prod-audit", from: "prod", to: "audit", dashed: true },
 ];
 
 function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
@@ -128,10 +143,7 @@ function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
     {
       key: "checkout", title: t("sc.f.checkout"), ok: true,
       nodes: ["checkout"], edges: [],
-      rows: [
-        ["stage", "Checkout"],
-        ["scans", "requirements.txt · package.json · ai-tools.yaml"],
-      ],
+      rows: [["scans", "requirements.txt · package.json · ai-tools.yaml"]],
     },
     {
       key: "gate", title: t("sc.f.gate"), ok: mode === "pass",
@@ -153,7 +165,7 @@ function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
   ];
 
   if (mode === "block") {
-    // 拦下就到此为止 —— 后面几步确实没有发生, 不画。这正是前置门禁的价值。
+    // 拦下就到此为止 —— 后面每一步都确实没有发生, 所以一步都不画。
     frames.push({
       key: "stop", title: t("sc.f.stopped"), ok: false,
       nodes: ["koi"], edges: [],
@@ -170,54 +182,47 @@ function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
     {
       key: "install", title: t("sc.f.install"), ok: true,
       nodes: ["koi", "install"], edges: ["koi-install"],
-      rows: [
-        ["runs", "setup.py · postinstall"],
-        ["note", t("sc.installNote")],
-      ],
+      rows: [["runs", "setup.py · postinstall"], ["note", t("sc.installNote")]],
     },
     {
       key: "build", title: t("sc.f.build"), ok: true,
       nodes: ["install", "build"], edges: ["install-build"],
-      rows: [["stage", "Docker Build"], ["images", "backend · frontend"]],
+      rows: [["images", "backend · frontend"]],
     },
     {
       key: "push", title: t("sc.f.push"), ok: true,
       nodes: ["build", "push"], edges: ["build-push"],
-      rows: [["stage", "Docker Push"], ["registry", "harbor · :BUILD_NUMBER"]],
+      rows: [["registry", "harbor · :BUILD_NUMBER"]],
     },
     {
-      key: "deploy", title: t("sc.f.deploy"), ok: true,
-      nodes: ["push", "deploy"], edges: ["push-deploy"],
-      rows: [["stage", "Deploy to VM"], ["then", "Health · Smoke"]],
+      key: "staging", title: t("sc.f.staging"), ok: true,
+      nodes: ["push", "staging"], edges: ["push-staging"],
+      rows: [["why", t("sc.stagingWhy")], ["then", "health · smoke"]],
     },
     {
       key: "redteam", title: t("sc.f.redteam"), ok: true,
-      nodes: ["deploy", "redteam"], edges: ["deploy-redteam"],
-      rows: [
-        ["stage", "Red Team"],
-        ["scope", t("sc.redteamScope")],
-        ["blocking", t("sc.failsCi")],
-        ["should be", t("sc.shouldBeStaging")],
-      ],
+      nodes: ["staging", "redteam"], edges: ["staging-redteam"],
+      rows: [["scope", t("sc.redteamScope")], ["target", t("sc.againstStaging")]],
     },
     {
       key: "pentest", title: t("sc.f.pentest"), ok: true,
       nodes: ["redteam", "pentest"], edges: ["redteam-pentest"],
-      rows: [
-        ["stage", "Pentest (DAST)"],
-        ["scope", t("sc.pentestScope")],
-        ["blocking", t("sc.failsCi")],
-        ["should be", t("sc.shouldBeStaging")],
-      ],
+      rows: [["scope", t("sc.pentestScope")], ["target", t("sc.againstStaging")]],
+    },
+    {
+      key: "promote", title: t("sc.f.promote"), ok: true,
+      nodes: ["pentest", "promote"], edges: ["pentest-promote"],
+      rows: [["gates", t("sc.promoteGates")], ["blocks", t("sc.promoteBlocks")]],
+    },
+    {
+      key: "prod", title: t("sc.f.prod"), ok: true,
+      nodes: ["promote", "prod"], edges: ["promote-prod"],
+      rows: [["deploys", t("sc.prodDeploys")]],
     },
     {
       key: "audit", title: t("sc.f.audit"), ok: true,
-      nodes: ["pentest", "audit"], edges: ["pentest-audit"],
-      rows: [
-        ["stage", "Supply Chain Gate"],
-        ["scope", t("sc.auditScope")],
-        ["blocking", t("sc.auditNonBlocking")],
-      ],
+      nodes: ["prod", "audit"], edges: ["prod-audit"],
+      rows: [["scope", t("sc.auditScope")], ["blocking", t("sc.auditNonBlocking")]],
     },
   );
   return frames;

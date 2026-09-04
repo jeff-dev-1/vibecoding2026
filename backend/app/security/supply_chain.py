@@ -13,18 +13,19 @@ from ..schemas import SupplyChainFinding, SupplyChainVerdict
 
 # Koi 支持的 marketplace 枚举里, demo 关心的几个 (覆盖 Vibe Coding 工具链)
 MARKETPLACES: list[dict[str, str]] = [
-    {"id": "pypi", "label": "PyPI (pip 包)"},
-    {"id": "npm", "label": "npm 包"},
-    {"id": "hugging_face", "label": "HuggingFace 模型"},
-    {"id": "github_mcp_registry", "label": "GitHub MCP server"},
-    {"id": "mcp_registry", "label": "MCP Registry"},
-    {"id": "vscode", "label": "VS Code 扩展"},
-    {"id": "cursor", "label": "Cursor 扩展"},
-    {"id": "claude_desktop_extensions", "label": "Claude Desktop 扩展"},
-    {"id": "chrome_web_store", "label": "Chrome 扩展"},
-    {"id": "open_vsx_registry", "label": "Open VSX"},
-    {"id": "homebrew", "label": "Homebrew"},
-    {"id": "jetbrains", "label": "JetBrains 插件"},
+    # 只给 id —— 显示名归前端的 i18n 字典管。
+    #
+    # 这里原来带 label ("PyPI (pip 包)" 之类), 于是界面切成 English 之后下拉框
+    # 仍然是中文: 显示文案由后端硬编码, 前端没法翻。凡是"给人看的字"都不该从这里出。
+    {"id": "pypi"},
+    {"id": "npm"},
+    {"id": "hugging_face"},
+    {"id": "github_mcp_registry"},
+    {"id": "mcp_registry"},
+    {"id": "vscode"},
+    {"id": "cursor"},
+    {"id": "claude_desktop_extensions"},
+    {"id": "chrome_web_store"},
 ]
 _VALID = {m["id"] for m in MARKETPLACES}
 

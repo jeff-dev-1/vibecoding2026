@@ -307,7 +307,9 @@ export function FlowPlayer({
           })}
         </div>
 
-        {/* 当前帧的说明卡 */}
+        {/* 当前帧的说明卡。
+            shrink-0 + 固定宽度是必须的: 它和图同在一个 overflow-auto 的行里,
+            不锁宽就会被图挤扁, 值被裁掉只剩标签 (STAGE / SCOPE 后面空着的那个样子)。 */}
         <div className="w-[300px] shrink-0">
           <div className="sticky top-0 rounded-xl border border-line bg-card p-3">
             <div className="flex items-center gap-2">
@@ -328,7 +330,9 @@ export function FlowPlayer({
                   <dt className="font-mono text-[10px] uppercase leading-4 tracking-wide text-muted">
                     {k}
                   </dt>
-                  <dd className="break-words font-mono text-[11px] leading-4">{v}</dd>
+                  {/* min-w-0 让 break-words 真的能断行 —— grid 子项默认 min-width:auto,
+                      不改的话长值会把这一列撑开, 然后被容器裁掉。 */}
+                  <dd className="min-w-0 break-words font-mono text-[11px] leading-4">{v}</dd>
                 </div>
               ))}
             </dl>

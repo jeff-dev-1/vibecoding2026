@@ -40,7 +40,7 @@ const GROUPS = (t: (k: any) => string): FlowGroup[] => [
   { id: "vendor", x: 606, y: 262, w: 300, h: 180, label: t("replay.groupVendor"), tone: "vendor" },
 ];
 
-function nodes(backend: LLMBackend): FlowNode[] {
+function nodes(backend: LLMBackend, provider: string): FlowNode[] {
   return [
     { id: "you", x: 68, y: 226, label: "You", icon: User, tone: "neutral", width: 104 },
     // 应用内部同一竖列对齐: 浏览器 → 后端 → 后端依赖的两样东西。
@@ -63,9 +63,18 @@ function nodes(backend: LLMBackend): FlowNode[] {
       tags: ["embed", "search"], tone: "app", width: 172,
     },
     // 网关和两个厂商同一竖列, 让"网关 → 上游"这一跳画成一条直线。
+    //
+    // 节点名跟着 provider 走: 切到 Portkey 之后还画着 "Envoy AI GW", 图就和
+    // 右边说明卡里的 provider 自相矛盾了。护栏标签也一并换 —— 两边的护栏不在一个地方。
     {
-      id: "gw", x: 756, y: 122, label: "Envoy AI GW", icon: Globe, badge: "GATEWAY",
-      tags: ["routing", "guardrail", "observability"], tone: "gateway", width: 214,
+      id: "gw", x: 756, y: 122,
+      label: provider === "portkey" ? "Portkey" : "Envoy AI GW",
+      icon: Globe, badge: "GATEWAY",
+      tags:
+        provider === "portkey"
+          ? ["routing", "guardrail (446)", "observability"]
+          : ["routing", "guardrail (400)", "observability"],
+      tone: "gateway", width: 214,
     },
     // 宽度要装得下 "qwen3-coder" + STANDBY 徽章; 176px 会把它截成 "qwen3-co…"
     {
@@ -267,7 +276,7 @@ export function ReplayFlow({
       width={W}
       height={H}
       groups={GROUPS(t)}
-      nodes={nodes(trace.backend)}
+      nodes={nodes(trace.backend, trace.provider)}
       edges={edges(trace.backend)}
       frames={frames}
       resetKey={trace}

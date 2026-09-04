@@ -333,7 +333,7 @@ export type SupplyChainVerdict = {
 };
 export type SupplyChainSamples = {
   enabled: boolean;
-  marketplaces: { id: string; label: string }[];
+  marketplaces: { id: string }[];
   samples: { marketplace: string; item_id: string; label: string }[];
 };
 

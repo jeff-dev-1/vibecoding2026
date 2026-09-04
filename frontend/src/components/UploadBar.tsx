@@ -34,18 +34,18 @@ export function UploadBar({ onUploaded, currentJob, onRefresh }: Props) {
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-card px-6 py-2.5">
-      <label
-        htmlFor="upload"
-        className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink transition hover:border-ink/25"
-      >
+      {/* input 嵌在 label 里, 就不能再给 label 加 htmlFor 指向它。
+          两种关联同时存在时 Chrome 会派发两次激活: 第一次弹出文件框, 第二次把它顶掉,
+          表现就是"点了没反应"。留隐式关联 (嵌套) 这一种即可。 */}
+      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink transition hover:border-ink/25">
         {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
         {busy ? t("upload.busy") : t("upload.button")}
         <input
-          id="upload"
           type="file"
           accept=".log,.txt,.json,.gz"
           className="hidden"
           onChange={handle}
+          disabled={busy}
         />
       </label>
 
