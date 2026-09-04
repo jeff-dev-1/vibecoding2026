@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  Activity,
   Boxes,
   FileCode2,
-  Radar,
   Route,
   ShieldCheck,
   Swords,
@@ -15,12 +13,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
+  AssuranceView,
   GuardrailView,
-  ObservabilityView,
-  PentestSection,
+  ModelsView,
   PromptsView,
-  RedteamSection,
-  RoutingView,
   SupplyChainView,
 } from "./GatewayPanel";
 import { DEMO_QUESTION, DEMO_TRACE, ReplayFlow } from "./ReplayFlow";
@@ -36,32 +32,28 @@ import type { ChatTrace, LLMBackend } from "@/lib/api";
  * "上传→看报告"都要先划过一整屏治理内容, 两边都讲不清楚。
  *
  * 分组按"这件事发生在什么时候"排, 不按实现:
- *   运行时  每一次请求都在发生的 (回放 / 路由 / 可观测)
- *   护栏    每一次请求都要过的闸 (输入输出护栏 / 供应链)
- *   验证    上线前跑的 (红队 / 渗透)
+ *   运行时  每一次请求都在发生的 (链路回放 / 模型与用量)
+ *   护栏    拦住坏东西的两道闸 (运行时拦坏请求 / 构建期拦坏软件)
+ *   验证    上线前跑的 (红队 + 渗透)
  *   配置    平时改的 (提示词)
  */
 
-type SectionId =
-  | "replay"
-  | "routing"
-  | "observability"
-  | "guardrail"
-  | "supply"
-  | "redteam"
-  | "pentest"
-  | "prompts";
+type SectionId = "replay" | "models" | "guardrail" | "supply" | "assurance" | "prompts";
 
 type Section = { id: SectionId; icon: LucideIcon; labelKey: Key };
 type Group = { titleKey: Key; items: Section[] };
 
+// 八项并成五项。合掉的三处都是"分开之后各自不足一屏、而且回答的是同一个问题":
+//   模型路由 + 可观测 → 模型与用量 (用哪个模型, 花了多少)
+//   红队 + 渗透测试   → 对抗性验证 (上线前用对抗手段打自己)
+// 护栏和供应链没有合: 一个拦坏请求 (运行时), 一个拦坏软件 (构建期),
+// 这条分界线是整个演示里最值得讲清楚的一条, 合了就糊了。
 const GROUPS: Group[] = [
   {
     titleKey: "console.group.runtime",
     items: [
       { id: "replay", icon: Waypoints, labelKey: "console.replay" },
-      { id: "routing", icon: Route, labelKey: "console.routing" },
-      { id: "observability", icon: Activity, labelKey: "console.observability" },
+      { id: "models", icon: Route, labelKey: "console.models" },
     ],
   },
   {
@@ -73,10 +65,7 @@ const GROUPS: Group[] = [
   },
   {
     titleKey: "console.group.assurance",
-    items: [
-      { id: "redteam", icon: Swords, labelKey: "console.redteam" },
-      { id: "pentest", icon: Radar, labelKey: "console.pentest" },
-    ],
+    items: [{ id: "assurance", icon: Swords, labelKey: "console.assurance" }],
   },
   {
     titleKey: "console.group.config",
@@ -195,7 +184,8 @@ export function ControlPlane({
           ))}
         </nav>
 
-        {/* 右栏: 内容。回放要占满整块, 其他板块给一个居中的阅读宽度。 */}
+        {/* 右栏: 内容。两张流程图要整块宽度 (图 + 说明卡横着放得下),
+            其余板块给一个居中的阅读宽度。 */}
         <div className="min-w-0 flex-1 overflow-y-auto">
           {section === "replay" ? (
             <div className="h-full p-5">
@@ -207,15 +197,19 @@ export function ControlPlane({
               />
             </div>
           ) : (
-            <div className="mx-auto max-w-4xl p-5">
-              {section === "routing" && (
-                <RoutingView backend={backend} onBackendChange={onBackendChange} />
+            <div
+              className={clsx(
+                "px-5 py-5 pb-10",
+                // 供应链页里有一张流程图, 和回放一样需要整块宽度; 其余给阅读宽度。
+                section === "supply" ? "min-w-0" : "mx-auto max-w-5xl",
               )}
-              {section === "observability" && <ObservabilityView />}
+            >
+              {section === "models" && (
+                <ModelsView backend={backend} onBackendChange={onBackendChange} />
+              )}
               {section === "guardrail" && <GuardrailView />}
               {section === "supply" && <SupplyChainView />}
-              {section === "redteam" && <RedteamSection />}
-              {section === "pentest" && <PentestSection />}
+              {section === "assurance" && <AssuranceView />}
               {section === "prompts" && <PromptsView />}
             </div>
           )}

@@ -46,8 +46,9 @@ export default function LoginPage() {
   }
 
   return (
-    // 1.618 : 1 —— 分割线落在黄金分割点上, 照片是主角, 表单占右边窄的一栏。
-    <div className="grid min-h-screen lg:grid-cols-[1.618fr_1fr]">
+    // 表单固定一栏宽, 剩下全给照片 —— 比例分栏在宽屏上会把表单也拉宽,
+    // 一个 340px 的输入框摊在 700px 的栏里, 两边各空一大片。
+    <div className="grid min-h-screen lg:grid-cols-[1fr_440px]">
       {/* 左：照片。窄屏下收起 —— 竖屏上一条竖条既看不清也挤掉表单。 */}
       <ArtPanel />
 

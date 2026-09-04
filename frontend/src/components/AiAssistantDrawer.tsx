@@ -34,7 +34,6 @@ type Scenario = {
   title: Key;
   desc: Key;
   icon: LucideIcon;
-  badge: "P0" | "P1" | "P2";
   color: string;
 };
 
@@ -44,7 +43,6 @@ const SCENARIOS: Scenario[] = [
     id: "traffic-overview",
     title: "sc.traffic",
     icon: BarChart3,
-    badge: "P0",
     color: "bg-primary/15 text-primary",
     desc: "sc.traffic.d",
   },
@@ -52,7 +50,6 @@ const SCENARIOS: Scenario[] = [
     id: "error-analysis",
     title: "sc.error",
     icon: TriangleAlert,
-    badge: "P0",
     color: "bg-brand-orange/20 text-brand-orange",
     desc: "sc.error.d",
   },
@@ -60,7 +57,6 @@ const SCENARIOS: Scenario[] = [
     id: "scan-detection",
     title: "sc.scan",
     icon: Search,
-    badge: "P0",
     color: "bg-brand-red/20 text-brand-red",
     desc: "sc.scan.d",
   },
@@ -68,7 +64,6 @@ const SCENARIOS: Scenario[] = [
     id: "bigresp-analysis",
     title: "sc.bigresp",
     icon: Box,
-    badge: "P1",
     color: "bg-brand-blue/20 text-brand-blue",
     desc: "sc.bigresp.d",
   },
@@ -76,7 +71,6 @@ const SCENARIOS: Scenario[] = [
     id: "bot-ua",
     title: "sc.bot",
     icon: Bot,
-    badge: "P1",
     color: "bg-brand-green/20 text-brand-green",
     desc: "sc.bot.d",
   },
@@ -84,7 +78,6 @@ const SCENARIOS: Scenario[] = [
     id: "ip-rate",
     title: "sc.iprate",
     icon: Gauge,
-    badge: "P0",
     color: "bg-brand-orange/20 text-brand-orange",
     desc: "sc.iprate.d",
   },
@@ -92,7 +85,6 @@ const SCENARIOS: Scenario[] = [
     id: "url-injection",
     title: "sc.injection",
     icon: ShieldAlert,
-    badge: "P0",
     color: "bg-primary/15 text-primary",
     desc: "sc.injection.d",
   },
@@ -219,12 +211,7 @@ export function AiAssistantDrawer({
                     <s.icon className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-ink">{t(s.title)}</span>
-                      <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                        {s.badge}
-                      </span>
-                    </div>
+                    <div className="text-sm font-medium text-ink">{t(s.title)}</div>
                     <div className="truncate text-xs text-muted">{t(s.desc)}</div>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-muted transition group-hover:text-ink" />
