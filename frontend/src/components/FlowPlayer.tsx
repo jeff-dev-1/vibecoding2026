@@ -192,15 +192,19 @@ export function FlowPlayer({
     <div className="flex h-full min-h-0 flex-col gap-3">
       {header}
 
-      {/* 图和说明卡各占一栏。卡片曾经是浮在图上的绝对定位, 结果把右上角那个分组整块盖住了 ——
-          现在给它自己的位置, 两边都不用为对方让路。 */}
-      <div className="flex min-h-0 flex-1 gap-4 overflow-auto">
-        {/* maxWidth 卡在图的自然尺寸上: 不封顶的话, 容器一宽这个盒子就按宽高比一起拉高,
-            图还是那么大, 下面白白多出一大块空。 */}
-        <div
-          className="relative flex-1 self-center"
-          style={{ aspectRatio: `${width} / ${height}`, minWidth, maxWidth: width }}
-        >
+      {/* 图和说明卡各占一栏。
+          外层不横向滚 —— 之前图 + 卡片总宽超过容器时, 卡片就被裁在右边缘外面 (只剩标签,
+          值看不见)。现在只让**图**自己横向滚, 卡片始终留在可视范围内; 窄容器下卡片
+          换行到图下方, 也不会被切。 */}
+      <div className="flex min-h-0 flex-1 flex-wrap items-start gap-4 xl:flex-nowrap">
+        {/* 图自己一个横向滚动容器 —— 窄屏时滚它, 而不是把右边的说明卡挤出视野。 */}
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          {/* maxWidth 卡在图的自然尺寸上: 不封顶的话, 容器一宽这个盒子就按宽高比一起拉高,
+              图还是那么大, 下面白白多出一大块空。 */}
+          <div
+            className="relative"
+            style={{ aspectRatio: `${width} / ${height}`, minWidth, maxWidth: width }}
+          >
           {/* 连线层。同一 viewBox, 坐标和下面的 HTML 节点一一对应。 */}
           <svg
             viewBox={`0 0 ${width} ${height}`}
@@ -303,8 +307,9 @@ export function FlowPlayer({
                   </div>
                 )}
               </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
         {/* 当前帧的说明卡。
@@ -312,17 +317,21 @@ export function FlowPlayer({
             不锁宽就会被图挤扁, 值被裁掉只剩标签 (STAGE / SCOPE 后面空着的那个样子)。 */}
         <div className="w-[300px] shrink-0">
           <div className="sticky top-0 rounded-xl border border-line bg-card p-3">
-            <div className="flex items-center gap-2">
+            {/* 标题一行, 耗时另起一行。挤在同一行时长标题会把 "4.16 s" 压成两行,
+                读起来像两个数字。 */}
+            <div className="flex items-start gap-2">
               <span
                 className={clsx(
-                  "size-2 shrink-0 rounded-full",
+                  "mt-1.5 size-2 shrink-0 rounded-full",
                   frame.ok ? "bg-primary" : "bg-brand-red",
                 )}
               />
-              <span className="text-sm font-semibold">{frame.title}</span>
-              {frame.ms !== undefined && (
-                <span className="ml-auto font-mono text-[11px] text-muted">{fmtMs(frame.ms)}</span>
-              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold leading-snug">{frame.title}</div>
+                {frame.ms !== undefined && (
+                  <div className="mt-0.5 font-mono text-[11px] text-muted">{fmtMs(frame.ms)}</div>
+                )}
+              </div>
             </div>
             <dl className="mt-2 space-y-1">
               {frame.rows.map(([k, v]) => (

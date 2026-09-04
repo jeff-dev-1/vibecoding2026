@@ -63,7 +63,6 @@ async def gateway_info(provider: str | None = None) -> dict:
     """
     active = provider if provider in ("envoy", "portkey") else settings.gateway_provider
     return {
-        "gateway": _GATEWAY_LABEL[active],
         "provider": active,
         "providers": _PROVIDERS,
         "default_backend": settings.default_backend,
@@ -93,39 +92,25 @@ async def gateway_info(provider: str | None = None) -> dict:
     }
 
 
-_GATEWAY_LABEL = {
-    "envoy": "Envoy AI Gateway",
-    "portkey": "Portkey (托管)",
-}
 
-_PROVIDERS = [
-    {
-        "id": "envoy",
-        "label": "Envoy AI Gateway",
-        "kind": "自建数据面",
-        "note": "护栏是网关进程里的 Lua filter, 请求路径上直接短路; 配置在本仓库里, 可 diff 可回滚。",
-    },
-    {
-        "id": "portkey",
-        "label": "Portkey",
-        "kind": "托管控制面",
-        "note": "护栏挂在 Portkey 的 pc-/pg- 配置上 (可接 Prisma AIRS 等引擎); 配置在厂商控制台, 不在本仓库。",
-    },
-]
+
+# 只给 id —— label / kind / note 都是给人看的文案, 由前端按语言渲染。
+_PROVIDERS = [{"id": "envoy"}, {"id": "portkey"}]
 
 
 def _guardrails(active: str) -> list[dict]:
     """当前 provider 下, 数据面上真实存在的护栏。
+
+    只返回 id 和事实数据 (是否启用、配置 id、规则名), **不返回给人看的文案** ——
+    label / where / action 都由前端按界面语言渲染。这里曾经带着中文 label,
+    于是界面切成 English 之后护栏卡片还是中文, 前端翻不了。
 
     两边都有 backend 的 input_guard 兜底 —— 那一层和网关无关, 所以两边都列。
     差别在网关那一层: Envoy 是自己的 Lua filter, Portkey 是托管护栏配置。
     """
     backend_layer = {
         "id": "backend-input-guard",
-        "label": "输入护栏 (后端兜底)",
         "enabled": True,
-        "where": "backend app/security/input_guard.py",
-        "action": "Block / Redact",
         "categories": ["EMAIL", "PHONE_CN", "ID_CARD_CN", "CARD", "IP"],
     }
 
@@ -133,34 +118,18 @@ def _guardrails(active: str) -> list[dict]:
         return [
             {
                 "id": "portkey-guardrail",
-                "label": "Portkey 托管护栏",
                 "enabled": bool(settings.portkey_config or settings.portkey_guardrail),
-                "where": (
-                    f"Portkey 控制面 · config {settings.portkey_config or '(未配置)'}"
-                    + (f" · guardrail {settings.portkey_guardrail}" if settings.portkey_guardrail else "")
-                ),
-                # 446 = DENY, 246 = 标记但放行。这两个码是 Portkey 的护栏约定,
-                # 写出来是为了让人能拿去和厂商控制台的日志对账。
-                "action": "Deny (HTTP 446) / Flag (246)",
-                "patterns": ["prompt injection", "PII", "Prisma AIRS (若已在配置中启用)"],
+                "config": settings.portkey_config,
+                "guardrail": settings.portkey_guardrail,
             },
             backend_layer,
-            {
-                "id": "rate-limit",
-                "label": "限流",
-                "enabled": True,
-                "where": "公网 nginx limit_req (登录 6r/m · 提问 20r/m)",
-                "action": "429",
-            },
+            {"id": "rate-limit-edge", "enabled": True},
         ]
 
     return [
         {
             "id": "prompt-injection",
-            "label": "Prompt Injection 拦截",
             "enabled": True,
-            "where": "Envoy Lua filter (网关数据面)",
-            "action": "Block (HTTP 400)",
             "patterns": [
                 "ignore previous instructions",
                 "ignore all previous",
@@ -169,13 +138,7 @@ def _guardrails(active: str) -> list[dict]:
             ],
         },
         backend_layer,
-        {
-            "id": "rate-limit",
-            "label": "限流",
-            "enabled": True,
-            "where": "Envoy local_ratelimit",
-            "action": "120 req/min/tenant",
-        },
+        {"id": "rate-limit-envoy", "enabled": True},
     ]
 
 

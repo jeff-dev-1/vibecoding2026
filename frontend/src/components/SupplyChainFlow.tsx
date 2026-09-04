@@ -43,8 +43,8 @@ import { useI18n } from "@/lib/i18n";
  * 保留在图的末端并明确标注 —— 演示要讲的正是这两者的区别, 而不是假装它已经改好了。
  */
 
-const W = 1420;
-const H = 470;
+const W = 1080;
+const H = 380;
 
 type Mode = "pass" | "block";
 
@@ -61,64 +61,56 @@ type Mode = "pass" | "block";
  * 这张图画的是推荐架构, 不是某一份 Jenkinsfile 的现状。
  */
 const GROUPS = (t: (k: any) => string): FlowGroup[] => [
-  { id: "ci", x: 36, y: 28, w: 470, h: 178, label: t("sc.groupCi"), tone: "supply" },
-  { id: "artifact", x: 546, y: 28, w: 838, h: 178, label: t("sc.groupArtifact"), tone: "app" },
-  { id: "staging", x: 36, y: 250, w: 900, h: 178, label: t("sc.groupStaging"), tone: "gateway" },
-  { id: "prod", x: 976, y: 250, w: 408, h: 178, label: t("sc.groupProd"), tone: "vendor" },
+  { id: "ci", x: 30, y: 28, w: 390, h: 168, label: t("sc.groupCi"), tone: "supply" },
+  { id: "artifact", x: 444, y: 28, w: 606, h: 168, label: t("sc.groupArtifact"), tone: "app" },
+  // 下排在左, 因为流向是从右往左的 —— 走完预发这一路, 落在左下角的生产。
+  { id: "prod", x: 30, y: 216, w: 336, h: 150, label: t("sc.groupProd"), tone: "vendor" },
+  { id: "staging", x: 390, y: 216, w: 660, h: 150, label: t("sc.groupStaging"), tone: "gateway" },
 ];
 
 function nodes(mode: Mode): FlowNode[] {
+  // 除 Koi 之外都不带徽章。
+  //
+  // CI / INSTALL / BUILD / PUSH / DEPLOY / PROD 这些徽章和分组框名、节点标签说的是
+  // 同一件事, 却占掉了节点大半宽度 —— 结果标签被截成 "check…" "b…" "pe…", 谁都读不出来。
+  // 去掉之后整个宽度都归文字。
+  //
+  // Koi 的 PASS / BLOCK 留着: 它随剧本切换而变, 是这张图上唯一一个带状态的徽章。
   return [
     {
-      id: "checkout", x: 148, y: 122, label: "Checkout", icon: GitBranch, badge: "CI",
-      tags: ["git"], tone: "supply", width: 180,
+      id: "checkout", x: 118, y: 112, label: "checkout", icon: GitBranch,
+      tags: ["git"], tone: "supply", width: 146,
     },
-    // 第一道闸: 卡 install。命中就到此为止, 后面几步都不会发生。
+    // 第一道闸: 卡 install。落在 CI 框和构建框的边界上 —— "在 install 之前"由框线说出来。
     {
-      id: "koi", x: 388, y: 122, label: "Koi Gate", icon: ScanLine,
+      id: "koi", x: 318, y: 112, label: "Koi Gate", icon: ScanLine,
       badge: mode === "block" ? "BLOCK" : "PASS",
       tags: ["pip", "npm", "mcp"],
-      tone: mode === "block" ? "danger" : "supply", width: 196,
-    },
-    // 门禁落在 CI 框和构建框的边界上 —— "在 install 之前"由框线本身说出来。
-    {
-      id: "install", x: 672, y: 122, label: "pip / npm install", icon: Boxes, badge: "INSTALL",
-      tags: ["setup.py", "postinstall"], tone: "app", width: 214,
+      tone: mode === "block" ? "danger" : "supply", width: 176,
     },
     {
-      id: "build", x: 922, y: 122, label: "docker build", icon: Hammer, badge: "BUILD",
-      tone: "app", width: 176,
+      id: "install", x: 540, y: 112, label: "install", icon: Boxes,
+      tags: ["setup.py", "postinstall"], tone: "app", width: 168,
+    },
+    { id: "build", x: 740, y: 112, label: "build", icon: Hammer, tone: "app", width: 128 },
+    { id: "push", x: 930, y: 112, label: "push", icon: PackageCheck, tone: "app", width: 128 },
+    // 下排走蛇形: 从右往左。预发就在 registry push 的正下方, push → staging 因此是
+    // 一条短竖线, 而不是横穿整张图的长对角线; 一路向左跑完两道对抗性验证和提升门禁,
+    // 最后落在左下角的生产。节点的左右排列因此是 audit · production · promote · pentest ·
+    // red team · staging, 读的时候从右往左。
+    { id: "staging", x: 946, y: 300, label: "staging", icon: Rocket, tone: "gateway", width: 146 },
+    {
+      id: "redteam", x: 772, y: 300, label: "red team", icon: Swords,
+      tags: ["injection"], tone: "gateway", width: 150,
     },
     {
-      id: "push", x: 1160, y: 122, label: "registry push", icon: PackageCheck, badge: "PUSH",
-      tone: "app", width: 182,
-    },
-    // 预发: 先有个跑着的东西, 才谈得上打它。
-    {
-      id: "staging", x: 152, y: 344, label: "deploy → staging", icon: Rocket, badge: "STAGING",
-      tone: "gateway", width: 202,
-    },
-    {
-      id: "redteam", x: 404, y: 344, label: "red team", icon: Swords, badge: "GATE",
-      tags: ["injection", "jailbreak"], tone: "gateway", width: 188,
-    },
-    {
-      id: "pentest", x: 646, y: 344, label: "pentest (DAST)", icon: Radar, badge: "GATE",
-      tags: ["zap", "nuclei"], tone: "gateway", width: 192,
+      id: "pentest", x: 612, y: 300, label: "pentest", icon: Radar,
+      tags: ["zap", "nuclei"], tone: "gateway", width: 152,
     },
     // 第二道闸: 卡 promote, 不卡 deploy。
-    {
-      id: "promote", x: 864, y: 344, label: "promote?", icon: ShieldCheck, badge: "GATE",
-      tone: "gateway", width: 148,
-    },
-    {
-      id: "prod", x: 1110, y: 344, label: "production", icon: Rocket, badge: "PROD",
-      tone: "vendor", width: 174,
-    },
-    {
-      id: "audit", x: 1310, y: 344, label: "audit", icon: ServerCog, badge: "REPORT",
-      tone: "vendor", width: 132,
-    },
+    { id: "promote", x: 466, y: 300, label: "promote", icon: ShieldCheck, tone: "gateway", width: 138 },
+    { id: "prod", x: 274, y: 300, label: "production", icon: Rocket, tone: "vendor", width: 152 },
+    { id: "audit", x: 110, y: 300, label: "audit", icon: ServerCog, tone: "vendor", width: 122 },
   ];
 }
 
@@ -246,7 +238,7 @@ export function SupplyChainFlow() {
       edges={EDGES}
       frames={frames}
       resetKey={mode}
-      minWidth={1120}
+      minWidth={900}
       header={
         <div className="flex flex-wrap items-center gap-3">
           {/* 两个剧本: 全部放行 / 命中一个高危包。切换即重播。 */}

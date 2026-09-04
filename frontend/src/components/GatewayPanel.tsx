@@ -18,7 +18,6 @@ import {
   type GatewayBackend,
   type GatewayInfo,
   type GatewayProvider,
-  type ProviderMeta,
   type GatewayPrompts,
   type GuardrailTestResult,
   type LLMBackend,
@@ -189,7 +188,7 @@ export function GuardrailView({
 
   return (
     <div className="space-y-3">
-      <ProviderSwitch value={provider} onChange={onProviderChange} meta={info?.providers} />
+      <ProviderSwitch value={provider} onChange={onProviderChange} />
       <GuardrailTester />
       {!info ? (
         <Loading />
@@ -203,12 +202,17 @@ export function GuardrailView({
                   g.enabled ? "bg-brand-green" : "bg-line",
                 )}
               />
-              <span className="text-sm font-medium text-ink">{g.label}</span>
+              <span className="text-sm font-medium text-ink">{t(`gr.${g.id}` as Key)}</span>
               <span className="ml-auto rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted">
-                {g.action}
+                {t(`gr.${g.id}.action` as Key)}
               </span>
             </div>
-            <div className="mt-1 text-xs text-muted">{g.where}</div>
+            <div className="mt-1 text-xs text-muted">
+              {t(`gr.${g.id}.where` as Key)}
+              {/* 配置 id 是事实, 跟在文案后面 —— 它要能拿去和 Portkey 控制台对账。 */}
+              {g.config && <span className="font-mono"> · config {g.config}</span>}
+              {g.guardrail && <span className="font-mono"> · guardrail {g.guardrail}</span>}
+            </div>
             {g.patterns && (
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {g.patterns.map((pat) => (
@@ -702,13 +706,11 @@ function FindingGroup({ risk, items }: { risk: string; items: PentestFinding[] }
 function ProviderSwitch({
   value,
   onChange,
-  meta,
 }: {
   value: GatewayProvider;
   onChange: (p: GatewayProvider) => void;
-  meta?: ProviderMeta[];
 }) {
-  const active = meta?.find((m) => m.id === value);
+  const { t } = useI18n();
   return (
     <div className="rounded-xl border border-line p-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -724,17 +726,15 @@ function ProviderSwitch({
                 value === id ? "bg-card text-primary shadow-sm" : "text-muted hover:text-ink",
               )}
             >
-              {meta?.find((m) => m.id === id)?.label ?? id}
+              {t(`pv.${id}` as Key)}
             </button>
           ))}
         </nav>
-        {active && (
-          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">
-            {active.kind}
-          </span>
-        )}
+        <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">
+          {t(`pv.${value}.kind` as Key)}
+        </span>
       </div>
-      {active && <p className="mt-2 text-[11px] leading-relaxed text-muted">{active.note}</p>}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted">{t(`pv.${value}.note` as Key)}</p>
     </div>
   );
 }

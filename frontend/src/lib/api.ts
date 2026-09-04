@@ -74,27 +74,22 @@ export type GatewayBackend = {
   default: boolean;
 };
 
+// 后端只给 id 和事实数据; label / where / action 由前端按语言渲染 (gr.* 键)。
 export type GatewayGuardrail = {
   id: string;
-  label: string;
   enabled: boolean;
-  where: string;
-  action: string;
   patterns?: string[];
   categories?: string[];
+  /** Portkey 路径下的配置 id, 拼进 where 文案里 —— 是事实, 不是文案。 */
+  config?: string;
+  guardrail?: string;
 };
 
 export type GatewayProvider = "envoy" | "portkey";
 
-export type ProviderMeta = {
-  id: GatewayProvider;
-  label: string;
-  kind: string;
-  note: string;
-};
+export type ProviderMeta = { id: GatewayProvider };
 
 export type GatewayInfo = {
-  gateway: string;
   provider?: GatewayProvider;
   providers?: ProviderMeta[];
   default_backend: string;

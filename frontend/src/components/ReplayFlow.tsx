@@ -1,6 +1,14 @@
 "use client";
 
-import { Database, Globe, MonitorSmartphone, Server, ShieldCheck, Sparkles, User } from "lucide-react";
+import {
+  Database,
+  Globe,
+  MonitorSmartphone,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { useMemo } from "react";
 import clsx from "clsx";
 import {
@@ -32,12 +40,32 @@ import type { ChatTrace, LLMBackend, TraceStep } from "@/lib/api";
  */
 
 const W = 940;
-const H = 520;
+const H = 540;
 
-const GROUPS = (t: (k: any) => string): FlowGroup[] => [
+const GROUPS = (t: (k: any) => string, provider: string): FlowGroup[] => [
   { id: "app", x: 150, y: 30, w: 400, h: 430, label: t("replay.groupApp"), tone: "app" },
-  { id: "gw", x: 606, y: 40, w: 300, h: 160, label: t("replay.groupGateway"), tone: "gateway" },
-  { id: "vendor", x: 606, y: 262, w: 300, h: 180, label: t("replay.groupVendor"), tone: "vendor" },
+  {
+    id: "gw",
+    x: 606,
+    y: 40,
+    // Portkey 路径下这个框里多一个 Prisma AIRS 节点, 所以要更高。
+    w: 300,
+    h: provider === "portkey" ? 250 : 160,
+    // 框名点出这是谁家的控制面 —— Envoy 是你自己跑的, Portkey 是厂商的 SaaS。
+    label: provider === "portkey" ? t("replay.groupPortkey") : t("replay.groupGateway"),
+    tone: "gateway",
+  },
+  // 厂商框要让开上面的网关框 —— Portkey 路径下网关框里多一个 AIRS 节点, 高到 y=290,
+  // 厂商框还留在 322 的话, 里面的节点会骑在框线上 (deepseek 冒出去过)。
+  {
+    id: "vendor",
+    x: 606,
+    y: provider === "portkey" ? 322 : 262,
+    w: 300,
+    h: provider === "portkey" ? 168 : 180,
+    label: t("replay.groupVendor"),
+    tone: "vendor",
+  },
 ];
 
 function nodes(backend: LLMBackend, provider: string): FlowNode[] {
@@ -54,9 +82,16 @@ function nodes(backend: LLMBackend, provider: string): FlowNode[] {
       tags: ["parse", "rag", "analyze"], tone: "app", width: 196,
     },
     // 护栏在左、检索在右, 因为链路是从左往右串下去的: 过闸 → 取证据 → 出境去网关。
+    //
+    // 这一层在两条路径下的职责不同, 标签如实反映:
+    //   envoy    注入 + PII 都归它 (网关那层的 Lua filter 是同一套规则的另一份)
+    //   portkey  注入交给 AIRS —— 实测本地正则更弱 (放行了 AIRS 拦下的 payload);
+    //            但 PII 脱敏只有本地这层能做, 因为它发生在请求**离开你的机器之前*。
+    //            AIRS 再强也是等 payload 到了 SaaS 才看到它。这不是冗余, 是边界。
     {
       id: "guard", x: 248, y: 386, label: "input_guard", icon: ShieldCheck, badge: "GUARD",
-      tags: ["injection", "pii"], tone: "app", width: 178,
+      tags: provider === "portkey" ? ["pii · pre-egress"] : ["injection", "pii"],
+      tone: "app", width: 178,
     },
     {
       id: "vec", x: 452, y: 386, label: "pgvector", icon: Database, badge: "STORE",
@@ -65,30 +100,45 @@ function nodes(backend: LLMBackend, provider: string): FlowNode[] {
     // 网关和两个厂商同一竖列, 让"网关 → 上游"这一跳画成一条直线。
     //
     // 节点名跟着 provider 走: 切到 Portkey 之后还画着 "Envoy AI GW", 图就和
-    // 右边说明卡里的 provider 自相矛盾了。护栏标签也一并换 —— 两边的护栏不在一个地方。
+    // 右边说明卡里的 provider 自相矛盾了。
     {
-      id: "gw", x: 756, y: 122,
-      label: provider === "portkey" ? "Portkey" : "Envoy AI GW",
-      icon: Globe, badge: "GATEWAY",
+      id: "gw", x: 756, y: 108,
+      label: provider === "portkey" ? "Portkey gateway" : "Envoy AI GW",
+      icon: Globe, badge: provider === "portkey" ? "SAAS" : "SELF-HOSTED",
       tags:
         provider === "portkey"
-          ? ["routing", "guardrail (446)", "observability"]
+          ? ["routing", "cost", "observability"]
           : ["routing", "guardrail (400)", "observability"],
       tone: "gateway", width: 214,
     },
+    // Prisma AIRS 单独画一个节点, 而不是塞成网关上的一个标签。
+    //
+    // 它是挂在网关上的 inline hook: 请求在到达厂商之前先过它一遍, 命中就回 446。
+    // 画成网关的一个 tag 会让人以为"护栏是网关自带的能力"; 实际上它是一个可换的
+    // 引擎 (AIRS / Lakera / NeMo 都能挂在这个位置), 这一点值得画出来。
+    ...(provider === "portkey"
+      ? [
+          {
+            id: "airs" as const, x: 756, y: 222, label: "Prisma AIRS", icon: ShieldCheck,
+            badge: "INLINE HOOK",
+            tags: ["injection", "dlp", "toxicity", "redaction"],
+            tone: "gateway" as const, width: 214,
+          },
+        ]
+      : []),
     // 宽度要装得下 "qwen3-coder" + STANDBY 徽章; 176px 会把它截成 "qwen3-co…"
     {
-      id: "deepseek", x: 756, y: 318, label: "deepseek", icon: Sparkles,
+      id: "deepseek", x: 756, y: provider === "portkey" ? 388 : 318, label: "deepseek", icon: Sparkles,
       badge: backend === "deepseek" ? "ACTIVE" : "STANDBY", tone: "vendor", width: 200,
     },
     {
-      id: "qwen", x: 756, y: 388, label: "qwen3-coder", icon: Sparkles,
+      id: "qwen", x: 756, y: provider === "portkey" ? 450 : 388, label: "qwen3-coder", icon: Sparkles,
       badge: backend === "qwen" ? "ACTIVE" : "STANDBY", tone: "vendor", width: 200,
     },
   ];
 }
 
-function edges(backend: LLMBackend): FlowEdge[] {
+function edges(backend: LLMBackend, provider: string): FlowEdge[] {
   const vendor = backend === "qwen" ? "qwen" : "deepseek";
   // 一条串行的链, 不是从 api 发散出去的三条支路。
   //
@@ -101,7 +151,13 @@ function edges(backend: LLMBackend): FlowEdge[] {
     { id: "api-guard", from: "api", to: "guard" },
     { id: "guard-vec", from: "guard", to: "vec" },
     { id: "vec-gw", from: "vec", to: "gw" },
-    { id: "gw-vendor", from: "gw", to: vendor },
+    // Portkey 路径上, 请求先过 AIRS 再出境; Envoy 路径上网关直连上游。
+    ...(provider === "portkey"
+      ? [
+          { id: "gw-airs", from: "gw", to: "airs" },
+          { id: "airs-vendor", from: "airs", to: vendor },
+        ]
+      : [{ id: "gw-vendor", from: "gw", to: vendor }]),
   ];
 }
 
@@ -117,10 +173,11 @@ export const DEMO_TRACE: ChatTrace = {
       },
     },
     {
-      id: "gateway", ok: true, ms: 0, summary: "deepseek",
+      id: "gateway", ok: true, ms: 0, summary: "pc-hk-dem-975209",
       detail: {
-        provider: "envoy", url: "http://envoy-ai-gateway:8080/v1/chat/completions",
-        "X-LLM-Backend": "deepseek", "X-LLM-Purpose": "log-analysis",
+        provider: "portkey", url: "https://api.portkey.ai/v1/chat/completions",
+        "x-portkey-config": "pc-hk-dem-975209",
+        guardrail: "Prisma AIRS · inline hook (446 = DENY)",
       },
     },
     {
@@ -134,7 +191,9 @@ export const DEMO_TRACE: ChatTrace = {
   total_ms: 4159,
   backend: "deepseek",
   model: "deepseek-chat",
-  provider: "envoy",
+  // 剧本跟着默认 provider 走 —— 默认是 Portkey, 剧本却演 Envoy 的话,
+  // 顶上的 GATEWAY_PROVIDER 徽章和图里画的东西就对不上。
+  provider: "portkey",
   prompt_tokens: 2418,
   completion_tokens: 386,
 };
@@ -213,9 +272,12 @@ function buildFrames(
   if (llm) {
     // 一次 HTTP 往返拆成"发出"和"返回"两帧: 耗时是整个往返量出来的, 记在返回那一帧,
     // 发出那一帧不写时间 —— 不把一个数字重复算两次。
+    const outNodes = trace.provider === "portkey" ? ["gw", "airs", vendor] : ["gw", vendor];
+    const outEdges =
+      trace.provider === "portkey" ? ["gw-airs", "airs-vendor"] : ["gw-vendor"];
     frames.push({
       key: "llm-out", title: t("replay.f.upstream"), ok: true,
-      nodes: ["gw", vendor], edges: ["gw-vendor"],
+      nodes: outNodes, edges: outEdges,
       rows: [
         ["model", String(llm.detail.model ?? trace.model)],
         ["key", t("replay.keyInjected")],
@@ -223,7 +285,7 @@ function buildFrames(
     });
     frames.push({
       key: "llm-in", title: t("replay.f.generated"), ok: llm.ok, ms: llm.ms,
-      nodes: [vendor, "gw"], edges: ["gw-vendor"],
+      nodes: [vendor, "gw"], edges: outEdges,
       rows: [
         ["model", String(llm.detail.model ?? trace.model)],
         [
@@ -275,9 +337,9 @@ export function ReplayFlow({
     <FlowPlayer
       width={W}
       height={H}
-      groups={GROUPS(t)}
+      groups={GROUPS(t, trace.provider)}
       nodes={nodes(trace.backend, trace.provider)}
-      edges={edges(trace.backend)}
+      edges={edges(trace.backend, trace.provider)}
       frames={frames}
       resetKey={trace}
       header={
