@@ -4,10 +4,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 
 from .prompts import DEFAULT_ANSWER_LANG, AnswerLang
-
 
 LogSource = Literal["nginx", "app", "custom"]
 # 日志族 —— 决定"这份日志能问什么"。与 services.log_parser.LogFamily 同一套取值。

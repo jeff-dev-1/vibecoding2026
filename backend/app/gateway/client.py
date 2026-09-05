@@ -23,7 +23,6 @@ from .. import observability
 from ..config import settings
 from ..telemetry import get_tracer
 
-
 LLMBackend = Literal["deepseek", "qwen"]
 
 # Portkey 侧给本应用流量打的标签; 分析接口按它过滤。
@@ -288,8 +287,11 @@ async def chat_structured(
         except (json.JSONDecodeError, ValidationError) as e:
             last_err = str(e)[:300]
             if attempt >= max_retries:
+                # from e —— 保留原始的 JSONDecodeError/ValidationError。
+                # 丢掉它的话, traceback 里只剩"解析失败"这句结论, 看不到是哪个字段、
+                # 哪一段 JSON 崩的, 而这正是排查结构化输出问题时唯一有用的信息。
                 raise GatewayError(
                     status=500,
                     body=f"structured parse failed after {max_retries+1} attempts: {last_err}",
-                )
+                ) from e
     raise RuntimeError("unreachable")

@@ -9,24 +9,21 @@ LLM 负责判断: summary / highest_severity / requires_immediate_attention /
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 from uuid import UUID
 
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from ..config import settings
 from ..db import SessionLocal
 from ..gateway.client import GatewayError, chat_structured
-from ..schemas import LogAnalysis, ParsedLogEntry, TrafficStat
+from ..schemas import LogAnalysis, ParsedLogEntry
 from ..services.embedding import embed
 from ..services.log_parser import split
 from ..services.traffic import aggregate
 from ..services.vector_store import StoredChunk, insert_chunks, search
-
-from pydantic import BaseModel, Field
-from typing import Literal
-
 
 # LLM 只返回这部分 (traffic 由后端补) — 单独 schema 防止 LLM 瞎编流量数字
 Severity = Literal["critical", "high", "medium", "low", "info"]
@@ -241,7 +238,7 @@ async def _finish(
             {
                 "sm": summary,
                 "ev": json.dumps(payload),
-                "t": datetime.now(timezone.utc),
+                "t": datetime.now(UTC),
                 "id": str(job_id),
             },
         )
@@ -255,6 +252,6 @@ async def _fail(job_id: UUID, err: str) -> None:
                 "UPDATE analysis_jobs SET status='failed', error=:e, "
                 "finished_at=:t WHERE id=:id"
             ),
-            {"e": err, "t": datetime.now(timezone.utc), "id": str(job_id)},
+            {"e": err, "t": datetime.now(UTC), "id": str(job_id)},
         )
         await s.commit()

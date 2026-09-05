@@ -17,7 +17,6 @@ from typing import Literal
 from ..config import settings
 from ..schemas import ParsedLogEntry
 
-
 # ===== chunk 切分 (embedding 用) =====
 
 @dataclass
@@ -32,8 +31,7 @@ def split(raw: str, chunk_lines: int | None = None) -> list[Chunk]:
     n = chunk_lines or settings.chunk_lines
     lines = raw.splitlines()
     chunks: list[Chunk] = []
-    idx = 0
-    for start in range(0, len(lines), n):
+    for idx, start in enumerate(range(0, len(lines), n)):
         window = lines[start : start + n]
         chunks.append(
             Chunk(
@@ -43,7 +41,6 @@ def split(raw: str, chunk_lines: int | None = None) -> list[Chunk]:
                 text="\n".join(window),
             )
         )
-        idx += 1
     return chunks
 
 

@@ -27,8 +27,13 @@ router = APIRouter()
 @router.post("/upload", response_model=UploadResponse)
 async def upload(
     bg: BackgroundTasks,
-    file: UploadFile = File(...),
-    source: Literal["nginx", "app", "custom"] = Form(default="custom"),
+    # noqa: B008 —— B008 禁止在默认值里调函数 (防的是可变默认值那个经典坑),
+    # 但 File()/Form() 正是 FastAPI 声明表单字段的**唯一**写法: 这两个调用返回的是
+    # 参数元信息, 框架靠它生成解析逻辑和 OpenAPI, 挪进函数体就没有上传接口了。
+    # 所以这里是规则不适用, 不是代码有问题 —— 只关这一行, 不整包放行,
+    # 免得以后真出现一个可变默认值时被一起放过去。
+    file: UploadFile = File(...),  # noqa: B008
+    source: Literal["nginx", "app", "custom"] = Form(default="custom"),  # noqa: B008
 ) -> UploadResponse:
     raw = await file.read()
     if len(raw) > settings.max_upload_bytes:
