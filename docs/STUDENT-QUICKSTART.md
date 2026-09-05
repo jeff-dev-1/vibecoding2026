@@ -26,7 +26,7 @@ docker compose -f docker-compose.dist.yml up -d
 
 | 地址 | 是什么 |
 |---|---|
-| http://localhost:3000 | 前端界面（登录默认 `admin` / `vibecoding2026`，可在 .env 改） |
+| http://localhost:3000 | 前端界面（访问码取自 .env 的 `DEMO_ACCESS_CODE`，无默认值，需自己设） |
 | http://localhost:8000/docs | **后端 REST API 文档（Swagger UI）** ← 造 MCP 的关键 |
 | http://localhost:8000/openapi.json | 机读版 OpenAPI schema ← 喂给 AI 用这个 |
 

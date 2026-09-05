@@ -85,9 +85,10 @@ export function sessionSecret(): string {
  *
  * 没配就返回 null —— 调用方据此拒绝所有登录 (fail closed)。
  *
- * 这里曾经回落到一个写死的 "vibecoding2026"。那个值同时出现在公开仓库的 .env.example 里,
- * 而这个 demo 是公网可达的 —— 等于门锁和钥匙一起发布。回落到一个已知常量的"方便",
- * 在任何对外可达的部署上都是一道敞开的门, 所以现在宁可登不进去, 也不放一个人人都知道的码。
+ * 这里曾经回落到一个写死的默认口令, 而同一个值又出现在公开仓库的 .env.example 和
+ * 若干文档里 —— 这个 demo 是公网可达的, 等于门锁和钥匙一起发布。回落到一个已知常量的
+ * "方便", 在任何对外可达的部署上都是一道敞开的门, 所以现在宁可登不进去, 也不放一个
+ * 人人都知道的码。(那个串本身也不写在这里 —— 免得脱敏了别处又从注释里漏回去。)
  */
 export function accessCode(): string | null {
   const code = process.env.DEMO_ACCESS_CODE || process.env.DEMO_PASSWORD;

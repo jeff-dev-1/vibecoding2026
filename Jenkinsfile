@@ -100,7 +100,7 @@ podTemplate(label: label, containers: [
                 -e "ssh -o StrictHostKeyChecking=no" \\
                 ./ \$DEPLOY_USER@\$DEPLOY_HOST:${DEPLOY_PATH}/
 
-              # 3. .env: 部署机上已有 (含 DEEPSEEK/QWEN/DEMO_PASSWORD key) 则保留;
+              # 3. .env: 部署机上已有 (含 DEEPSEEK/QWEN/DEMO_ACCESS_CODE) 则保留;
               #    首次缺失则写占位符并提示手动填 (key 不进 CI / 代码仓)
               sshpass -p "\$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \$DEPLOY_USER@\$DEPLOY_HOST '
                 if [ ! -f ${DEPLOY_PATH}/.env ]; then
@@ -110,9 +110,14 @@ QWEN_API_KEY=PLEASE_SET
 LLM_MODEL=deepseek-chat
 LLM_BACKEND=deepseek
 LLM_GATEWAY_API_KEY=demo-key-not-secret
-DEMO_PASSWORD=vibecoding2026
+# 访问码留空 = 前端拒绝全部登录 (fail closed, 见 frontend/src/lib/session.ts)。
+# 这里曾经写死一个公开已知的口令 —— 其他字段都是 PLEASE_SET, 唯独它给了个能用的真值,
+# 于是每台新部署的机器一起来就带着一道人人都能开的门。宁可登不进去, 也不发默认口令。
+# 部署后在这台机器上执行:  echo "DEMO_ACCESS_CODE=$(openssl rand -hex 6)" >> .env
+DEMO_ACCESS_CODE=
 ENVEOF
                   echo "WARN: created placeholder .env — 请手动填 DEEPSEEK_API_KEY/QWEN_API_KEY"
+                  echo "WARN: DEMO_ACCESS_CODE 为空, 登录会被全部拒绝; 设一个再重启 frontend"
                 else
                   echo ".env exists, preserving"
                 fi

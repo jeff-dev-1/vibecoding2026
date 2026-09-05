@@ -677,8 +677,8 @@ curl -s localhost:8000/gateway/redteam-report | python3 -c "import sys,json;r=js
 A. 登录门(Next.js):
    - src/middleware.ts:无 demo_auth cookie 一律重定向 /login
    - src/app/login/page.tsx:匹配风格的登录页(indigo 渐变)
-   - src/app/auth/login/route.ts:校验 DEMO_PASSWORD(env)设 httpOnly cookie;logout 路由
-   - docker-compose frontend 加 DEMO_PASSWORD env(默认 vibecoding2026)
+   - src/app/auth/login/route.ts:校验 DEMO_ACCESS_CODE(env)设签名 cookie;logout 路由
+   - docker-compose frontend 加 DEMO_ACCESS_CODE env(**无默认值**;未配置时拒绝全部登录)
    - 注意:/auth/* 不能被 /api/* 重写规则吃掉
 B. CI/CD:流水线 build 双镜像 → push → 部署 → 健康检查(探 /login 因为 / 会 307)
    → smoke(注入拦截)→ 红队
@@ -692,7 +692,9 @@ B. CI/CD:流水线 build 双镜像 → push → 部署 → 健康检查(探 /log
 docker compose up -d --build frontend
 curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/        # 期望 307
 curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/login   # 期望 200
-curl -s -X POST localhost:3000/auth/login -H "Content-Type: application/json" -d '{"password":"vibecoding2026"}' -o /dev/null -w "login %{http_code}\n"
+# 用你自己在 .env 里设的访问码, 别把它写进文档或提交历史
+curl -s -X POST localhost:3000/auth/login -H "Content-Type: application/json" \
+  -d "{\"password\":\"$DEMO_ACCESS_CODE\"}" -o /dev/null -w "login %{http_code}\n"
 ```
 
 ### 人工检查点
