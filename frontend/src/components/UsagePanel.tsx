@@ -149,28 +149,51 @@ export function UsagePanel({ provider }: { provider: string }) {
 
           <GuardrailVerdicts g={data.guardrail} />
 
-          {data.by_model.length > 0 && (
-            <div className="rounded-xl border border-line">
-              <div className="border-b border-line px-3 py-2 text-xs font-medium text-muted">
-                {t("usage.byModel")}
-              </div>
-              <ul className="divide-y divide-line">
-                {data.by_model.map((m) => (
-                  <li key={m.model} className="flex items-center gap-3 px-3 py-2">
-                    <span className="font-mono text-xs text-ink">{m.model}</span>
-                    <span className="flex-1" />
-                    <span className="font-mono text-xs text-muted">
-                      {m.requests} {t("gw.calls")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* 按模型 / 按上游并排 —— 两者一起才说明"路由到底做了什么":
+              同一个模型名可能来自不同上游, 同一个上游也可能承载多个模型。 */}
+          <div className="grid gap-2 lg:grid-cols-2">
+            <Breakdown
+              title={t("usage.byModel")}
+              rows={data.by_model.map((m) => ({ k: m.model, n: m.requests }))}
+            />
+            <Breakdown
+              title={t("usage.byProvider")}
+              rows={(data.by_provider ?? []).map((p) => ({ k: p.provider, n: p.requests }))}
+            />
+          </div>
 
           <p className="text-[11px] leading-relaxed text-muted">{t("usage.note")}</p>
         </>
       )}
+    </div>
+  );
+}
+
+/** 一张分组表 (按模型 / 按上游)。空的时候不渲染, 免得留一个空框。 */
+function Breakdown({ title, rows }: { title: string; rows: { k: string; n: number }[] }) {
+  const { t } = useI18n();
+  if (rows.length === 0) return null;
+  const max = Math.max(...rows.map((r) => r.n), 1);
+  return (
+    <div className="rounded-xl border border-line">
+      <div className="border-b border-line px-3 py-2 text-xs font-medium text-muted">{title}</div>
+      <ul className="divide-y divide-line">
+        {rows.map((r) => (
+          <li key={r.k} className="px-3 py-2">
+            <div className="flex items-center gap-3">
+              <span className="truncate font-mono text-xs text-ink">{r.k || "—"}</span>
+              <span className="flex-1" />
+              <span className="shrink-0 font-mono text-xs text-muted">
+                {r.n} {t("gw.calls")}
+              </span>
+            </div>
+            {/* 一条比例条 —— 光看数字很难感觉出 123 : 29 的差距 */}
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface">
+              <div className="h-full rounded-full bg-primary/60" style={{ width: `${(r.n / max) * 100}%` }} />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

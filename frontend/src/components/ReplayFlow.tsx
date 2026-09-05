@@ -119,8 +119,13 @@ function nodes(backend: LLMBackend, provider: string): FlowNode[] {
     ...(provider === "portkey"
       ? [
           {
+            // 归属标在节点上, 不标在分组框上。
+            //
+            // 分组框原来叫 "Palo Alto Networks · Portkey", 那是把两家公司写成了一家:
+            // Portkey 是独立的网关厂商, Prisma AIRS 是 Palo Alto 的产品, 以 PARTNER
+            // check 的形式挂在 Portkey 的护栏配置里。框是 Portkey 的, 引擎是 PANW 的。
             id: "airs" as const, x: 756, y: 222, label: "Prisma AIRS", icon: ShieldCheck,
-            badge: "INLINE HOOK",
+            badge: "PANW",
             tags: ["injection", "dlp", "toxicity", "redaction"],
             tone: "gateway" as const, width: 214,
           },

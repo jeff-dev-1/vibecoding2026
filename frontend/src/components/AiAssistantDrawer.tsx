@@ -8,13 +8,20 @@ import {
   Box,
   Check,
   ChevronRight,
+  Clock,
+  KeyRound,
+  LayoutGrid,
   Copy as CopyIcon,
   ExternalLink,
   Gauge,
   Loader2,
+  ListTree,
   Search,
+  ServerCog,
   ShieldAlert,
   Sparkles,
+  UserCog,
+  Users,
   TriangleAlert,
   Waypoints,
   X,
@@ -29,6 +36,7 @@ import {
   type GatewayProvider,
   type Job,
   type LLMBackend,
+  type LogFamily,
 } from "@/lib/api";
 import { AnswerTrace } from "./AnswerTrace";
 import { Markdown } from "./Markdown";
@@ -45,8 +53,13 @@ type Scenario = {
   color: string;
 };
 
-// 全部基于 Nginx access log 真实字段, 无证据来源的场景 (VS/SSL/告警) 已删
-const SCENARIOS: Scenario[] = [
+// 场景卡按**日志族**分两组 —— 后端 SCENARIO_PROMPTS 的 id 与这里一一对应。
+//
+// 为什么必须分组: 这七张 access 卡问的全是 HTTP 字段 (状态码 / 路径 / UA / URL 注入)。
+// 上传一份 sshd 认证日志之后, 七个场景问的东西日志里一个都没有, 模型只能每次都回
+// 同一句"这不是 access log 数据", 于是七张卡产出同一个答案 —— 卡片看着有七个,
+// 实际只有一个。族跟着数据走, 卡片才问得出七个不同的答案。
+const ACCESS_SCENARIOS: Scenario[] = [
   {
     id: "traffic-overview",
     title: "sc.traffic",
@@ -98,6 +111,66 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
+// Linux syslog / auth.log / Apache error_log —— 问进程、level、用户名、rhost、会话。
+const SYSTEM_SCENARIOS: Scenario[] = [
+  {
+    id: "sys-overview",
+    title: "sc.sysOverview",
+    icon: ListTree,
+    color: "bg-primary/15 text-primary",
+    desc: "sc.sysOverview.d",
+  },
+  {
+    id: "sys-auth-failure",
+    title: "sc.sysAuth",
+    icon: KeyRound,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.sysAuth.d",
+  },
+  {
+    id: "sys-brute-force",
+    title: "sc.sysBrute",
+    icon: ShieldAlert,
+    color: "bg-brand-red/20 text-brand-red",
+    desc: "sc.sysBrute.d",
+  },
+  {
+    id: "sys-user-enum",
+    title: "sc.sysEnum",
+    icon: Users,
+    color: "bg-brand-blue/20 text-brand-blue",
+    desc: "sc.sysEnum.d",
+  },
+  {
+    id: "sys-privilege",
+    title: "sc.sysPriv",
+    icon: UserCog,
+    color: "bg-brand-red/20 text-brand-red",
+    desc: "sc.sysPriv.d",
+  },
+  {
+    id: "sys-service-health",
+    title: "sc.sysService",
+    icon: ServerCog,
+    color: "bg-brand-green/20 text-brand-green",
+    desc: "sc.sysService.d",
+  },
+  {
+    id: "sys-timeline",
+    title: "sc.sysTimeline",
+    icon: Clock,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.sysTimeline.d",
+  },
+];
+
+const SCENARIOS_BY_FAMILY: Record<LogFamily, Scenario[]> = {
+  access: ACCESS_SCENARIOS,
+  system: SYSTEM_SCENARIOS,
+};
+
+const ALL_SCENARIOS = [...ACCESS_SCENARIOS, ...SYSTEM_SCENARIOS];
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -131,13 +204,20 @@ export function AiAssistantDrawer({
   const [busy, setBusy] = useState(false);
   const [resp, setResp] = useState<ChatResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 场景卡是否展开。答完一次自动收起 (别一直占着半屏), 但顶上留一个开关随时叫回来 ——
+  // 原来收起之后只能 logout 再 login 才看得到, 那不是"收起", 那是"没了"。
+  const [showCards, setShowCards] = useState(true);
+
+  // 这份日志属于哪一族, 就给哪一组卡片。后端判定, 前端不重复猜。
+  const family: LogFamily = job?.log_family ?? "access";
+  const scenarios = SCENARIOS_BY_FAMILY[family] ?? ACCESS_SCENARIOS;
 
   async function run(args: { scenarioId?: string; q?: string }) {
     const finalQ = args.q ?? question;
     if (!finalQ.trim() && !args.scenarioId) return;
     // 自由提问 (来自输入框) 发送后清空输入框
     const fromInput = args.q === undefined && !args.scenarioId;
-    const picked = SCENARIOS.find((s) => s.id === args.scenarioId);
+    const picked = ALL_SCENARIOS.find((s) => s.id === args.scenarioId);
     const label = finalQ || (picked ? t(picked.title) : finalQ);
     setBusy(true);
     setErr(null);
@@ -154,6 +234,7 @@ export function AiAssistantDrawer({
       });
       setResp(r);
       setScenario(args.scenarioId ?? null);
+      setShowCards(false);
       if (fromInput) setQuestion("");
       // 真实链路交给控制面 —— 回放器优先放真的, 没有才放剧本。
       if (r.trace) onTrace(r.trace, label, r.citations.length);
@@ -178,6 +259,21 @@ export function AiAssistantDrawer({
           <h2 className="text-sm font-semibold text-ink">{t("ai.title")}</h2>
         </div>
         <div className="flex items-center gap-2">
+          {/* 场景卡开关 —— 答完一次卡片收起来, 但要能叫回来。
+              原来收起之后没有任何入口, 只能登出重登, 于是"七个一键场景"变成了一次性的。 */}
+          <button
+            onClick={() => setShowCards((v) => !v)}
+            aria-pressed={showCards}
+            title={t("ai.toggleScenarios")}
+            className={clsx(
+              "grid size-7 place-items-center rounded-lg border transition",
+              showCards
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-line text-muted hover:text-ink",
+            )}
+          >
+            <LayoutGrid className="size-4" />
+          </button>
           <select
             value={backend}
             onChange={(e) => onBackendChange(e.target.value as LLMBackend)}
@@ -198,13 +294,16 @@ export function AiAssistantDrawer({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {/* 场景卡 —— 提过一次问之后收起来, 别一直占着半屏 */}
-        {!resp && !busy && (
-          <>
+        {/* 场景卡 —— 答完一次自动收起, 顶栏的开关随时叫回来。
+            卡片本身跟着日志族走: access log 一组, 系统日志另一组。 */}
+        {showCards && !busy && (
+          <div className={clsx(resp && "mb-4 border-b border-line pb-4")}>
             <div className="mb-1 text-xs font-medium text-muted">{t("ai.pickScenario")}</div>
-            <p className="mb-3 text-xs text-muted">{t("ai.pickScenarioHint")}</p>
+            <p className="mb-3 text-xs text-muted">
+              {t(family === "system" ? "ai.familySystem" : "ai.familyAccess")}
+            </p>
             <div className="space-y-2">
-              {SCENARIOS.map((s) => (
+              {scenarios.map((s) => (
                 <button
                   key={s.id}
                   disabled={busy}
@@ -227,7 +326,7 @@ export function AiAssistantDrawer({
                 </button>
               ))}
             </div>
-          </>
+          </div>
         )}
 
         {/* 提出的问题 —— 像聊天客户端那样贴右, 不用饱和色块 */}
@@ -281,11 +380,11 @@ export function AiAssistantDrawer({
                   </div>
                 )}
 
-                {/* 图表只在场景化提问时出。
+                {/* 图表只在场景化提问时出, 而且**哪几张图跟着哪个场景**。
                     自由提问 (比如"这条 PII 会怎么处理") 和图表无关, 却照样弹出一屏
                     状态码环图和 TOP 路径 —— 那是噪声, 会把真正的答案挤到屏幕外面。
-                    场景卡本来就是"给我看这类图"的意思, 图跟着场景走才对得上。 */}
-                {job && scenario && <ScenarioCharts job={job} />}
+                    每个场景铺同一组图也一样: 七个场景看上去会长得一模一样。 */}
+                {job && scenario && <ScenarioCharts job={job} scenario={scenario} />}
 
                 {/* LLM 文字结论 */}
                 <Markdown text={resp.answer} />

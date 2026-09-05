@@ -10,6 +10,8 @@ from .prompts import DEFAULT_ANSWER_LANG, AnswerLang
 
 
 LogSource = Literal["nginx", "app", "custom"]
+# 日志族 —— 决定"这份日志能问什么"。与 services.log_parser.LogFamily 同一套取值。
+LogFamily = Literal["access", "system"]
 JobStatus = Literal["pending", "running", "done", "failed"]
 
 # Backend selector — Gateway 看这个 header 决定上游模型
@@ -142,6 +144,10 @@ class JobResponse(BaseModel):
     analysis: LogAnalysis | None = None
     # 新: 解析后的样本日志条目 (前端表格用)
     sample_entries: list[ParsedLogEntry] | None = None
+    # 日志族 —— 前端据此决定显示哪一组场景卡。
+    # access log 的场景 (状态码/TOP 路径/UA/URL 注入) 问到 syslog 上会全部落空,
+    # 七个场景于是塌成同一句"这不是 access log"。族要跟着数据走, 不能写死。
+    log_family: LogFamily = "access"
 
 
 # ===== Chat =====

@@ -64,8 +64,8 @@ const GROUPS = (t: (k: any) => string): FlowGroup[] => [
   { id: "ci", x: 30, y: 28, w: 390, h: 168, label: t("sc.groupCi"), tone: "supply" },
   { id: "artifact", x: 444, y: 28, w: 606, h: 168, label: t("sc.groupArtifact"), tone: "app" },
   // 下排在左, 因为流向是从右往左的 —— 走完预发这一路, 落在左下角的生产。
-  { id: "prod", x: 30, y: 216, w: 336, h: 150, label: t("sc.groupProd"), tone: "vendor" },
-  { id: "staging", x: 390, y: 216, w: 660, h: 150, label: t("sc.groupStaging"), tone: "gateway" },
+  { id: "prod", x: 26, y: 216, w: 356, h: 150, label: t("sc.groupProd"), tone: "vendor" },
+  { id: "staging", x: 402, y: 216, w: 650, h: 150, label: t("sc.groupStaging"), tone: "gateway" },
 ];
 
 function nodes(mode: Mode): FlowNode[] {
@@ -98,18 +98,18 @@ function nodes(mode: Mode): FlowNode[] {
     // 一条短竖线, 而不是横穿整张图的长对角线; 一路向左跑完两道对抗性验证和提升门禁,
     // 最后落在左下角的生产。节点的左右排列因此是 audit · production · promote · pentest ·
     // red team · staging, 读的时候从右往左。
-    { id: "staging", x: 946, y: 300, label: "staging", icon: Rocket, tone: "gateway", width: 146 },
+    { id: "staging", x: 966, y: 300, label: "staging", icon: Rocket, tone: "gateway", width: 124 },
     {
-      id: "redteam", x: 772, y: 300, label: "red team", icon: Swords,
+      id: "redteam", x: 812, y: 300, label: "red team", icon: Swords,
       tags: ["injection"], tone: "gateway", width: 150,
     },
     {
-      id: "pentest", x: 612, y: 300, label: "pentest", icon: Radar,
+      id: "pentest", x: 640, y: 300, label: "pentest", icon: Radar,
       tags: ["zap", "nuclei"], tone: "gateway", width: 152,
     },
     // 第二道闸: 卡 promote, 不卡 deploy。
-    { id: "promote", x: 466, y: 300, label: "promote", icon: ShieldCheck, tone: "gateway", width: 138 },
-    { id: "prod", x: 274, y: 300, label: "production", icon: Rocket, tone: "vendor", width: 152 },
+    { id: "promote", x: 484, y: 300, label: "promote", icon: ShieldCheck, tone: "gateway", width: 126 },
+    { id: "prod", x: 296, y: 300, label: "production", icon: Rocket, tone: "vendor", width: 146 },
     // 发布记录, 不是"再扫一遍"。
     //
     // 这里原来叫 audit, 对应的是把 Koi 门禁放在部署之后的那版流水线。门禁前移之后
@@ -119,7 +119,7 @@ function nodes(mode: Mode): FlowNode[] {
     //
     // 这个位置真正属于流水线本次运行的, 是发布记录: 发的是哪个 digest、哪个 commit、
     // 过了哪几道闸、扫描报告存档在哪 —— 受监管客户被审计时要拿出来的就是这个。
-    { id: "record", x: 110, y: 300, label: "release record", icon: FileCheck, tone: "vendor", width: 168 },
+    { id: "record", x: 124, y: 300, label: "release record", icon: FileCheck, tone: "vendor", width: 172 },
   ];
 }
 

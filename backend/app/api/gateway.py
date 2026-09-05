@@ -19,7 +19,7 @@ from sqlalchemy import text
 from .. import observability
 from ..config import settings
 from ..db import SessionLocal
-from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
+from ..prompts import SCENARIO_PROMPTS, system_prompt
 from ..schemas import (
     GuardrailTestRequest,
     GuardrailTestResponse,
@@ -262,16 +262,23 @@ async def get_pentest_report() -> PentestReport | dict:
 async def gateway_prompts() -> dict:
     """提示词管理 — 集中暴露所有受管 prompt 资产。"""
     return {
+        # 两族各一份 system prompt —— 面板要如实反映"资产不止一条"。
         "system_prompts": [
             {
-                "id": "rag-chat",
-                "label": "RAG 问答 system",
-                "content": RAG_SYSTEM_PROMPT,
-            },
+                "id": f"rag-chat-{family}",
+                "label": label,
+                "family": family,
+                "content": system_prompt(family),
+            }
+            for family, label in (
+                ("access", "RAG 问答 system · access log"),
+                ("system", "RAG 问答 system · 系统日志"),
+            )
         ],
         "scenario_prompts": [
-            {"id": sid, "title": v["title"], "content": v["prompt"]}
-            for sid, v in SCENARIO_PROMPTS.items()
+            {"id": sid, "title": v["title"], "family": family, "content": v["prompt"]}
+            for family, table in SCENARIO_PROMPTS.items()
+            for sid, v in table.items()
         ],
     }
 
@@ -311,6 +318,12 @@ async def _portkey_get(client: httpx.AsyncClient, path: str, params: dict) -> di
 async def gateway_analytics(window: str = "24h") -> dict:
     """AI 网关用量 —— 直接取自 Portkey 的分析 API。
 
+    可用的序列只有这些: requests / cost / latency / tokens / errors / users / feedbacks;
+    分组只支持 ai_service, model, status_code, api_key, config, workspace, provider, prompt。
+    控制台上还有的 Rescued Requests 和 Cache **在这个 API 里没有对应端点** (试过
+    rescued / rescued-requests / cache / cache-hit-rate 等一圈都是 404), 所以没有做 ——
+    宁可少一块, 不编一个数出来。
+
     返回时间序列 + 汇总 + 护栏裁定分布。没配 Portkey key 时返回 configured=False,
     前端据此回落到本地内存窗口 (Envoy 路径下只有那一份)。
     """
@@ -329,15 +342,20 @@ async def gateway_analytics(window: str = "24h") -> dict:
     }
 
     async with httpx.AsyncClient() as client:
-        requests_g, cost_g, latency_g, tokens_g, errors_g, users_g, models, codes = await asyncio.gather(
+        (
+            requests_g, cost_g, latency_g, tokens_g, errors_g, users_g,
+            feedback_g, models, codes, providers,
+        ) = await asyncio.gather(
             _portkey_get(client, "graphs/requests", params),
             _portkey_get(client, "graphs/cost", params),
             _portkey_get(client, "graphs/latency", params),
             _portkey_get(client, "graphs/tokens", params),
             _portkey_get(client, "graphs/errors", params),
             _portkey_get(client, "graphs/users", params),
+            _portkey_get(client, "graphs/feedbacks", params),
             _portkey_get(client, "groups/model", params),
             _portkey_get(client, "groups/status_code", params),
+            _portkey_get(client, "groups/provider", params),
         )
 
     def series(g: dict, field: str) -> list[dict]:
@@ -364,6 +382,7 @@ async def gateway_analytics(window: str = "24h") -> dict:
             "latency_p90": (latency_g.get("summary") or {}).get("p90", 0),
             "errors": (errors_g.get("summary") or {}).get("total", 0),
             "users": (users_g.get("summary") or {}).get("total", 0),
+            "feedback": (feedback_g.get("summary") or {}).get("total", 0),
         },
         "series": {
             "requests": series(requests_g, "total"),
@@ -372,10 +391,16 @@ async def gateway_analytics(window: str = "24h") -> dict:
             "latency": series(latency_g, "p50"),
             "errors": series(errors_g, "total"),
             "users": series(users_g, "total"),
+            "feedback": series(feedback_g, "total"),
         },
         "by_model": [
             {"model": d.get("model"), "requests": d.get("requests", 0)}
             for d in (models.get("data") or [])
+        ],
+        # 按上游厂商分组 —— 这是"网关做了路由"最直接的证据。
+        "by_provider": [
+            {"provider": d.get("provider"), "requests": d.get("requests", 0)}
+            for d in (providers.get("data") or [])
         ],
         # 护栏裁定 —— Portkey 的约定: 446 拒绝, 246 标记但放行, 其余是正常/错误。
         "guardrail": {

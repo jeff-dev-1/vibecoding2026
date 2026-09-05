@@ -11,7 +11,7 @@ from ..agents.analyzer import index_and_analyze
 from ..config import settings
 from ..db import SessionLocal
 from ..schemas import EvidenceItem, JobResponse, LogAnalysis, ParsedLogEntry, UploadResponse
-from ..services.log_parser import parse_entries
+from ..services.log_parser import dominant_family, parse_entries
 
 router = APIRouter()
 
@@ -88,6 +88,7 @@ def _row_to_job(r: Any) -> JobResponse:
         evidence=evidence_items,
         analysis=analysis_obj,
         sample_entries=sample_entries,
+        log_family=dominant_family(sample_entries or []),
         error=r.error,
         created_at=r.created_at,
         finished_at=r.finished_at,

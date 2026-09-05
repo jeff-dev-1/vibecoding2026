@@ -120,6 +120,9 @@ export type ParsedLogEntry = {
   message?: string | null;
 };
 
+/** access = Nginx/Apache access log; system = Linux syslog / Apache error_log */
+export type LogFamily = "access" | "system";
+
 export type Job = {
   id: string;
   log_id: string;
@@ -128,6 +131,8 @@ export type Job = {
   evidence?: EvidenceItem[] | null;
   analysis?: LogAnalysis | null;
   sample_entries?: ParsedLogEntry[] | null;
+  /** 日志族 —— 决定 AI 助手显示哪一组场景卡。后端按解析结果判定。 */
+  log_family?: LogFamily;
   error?: string | null;
   created_at: string;
   finished_at?: string | null;
@@ -438,6 +443,7 @@ export type Analytics = {
     latency_p90: number;
     errors: number;
     users: number;
+    feedback: number;
   };
   series: {
     requests: SeriesPoint[];
@@ -446,8 +452,11 @@ export type Analytics = {
     latency: SeriesPoint[];
     errors: SeriesPoint[];
     users: SeriesPoint[];
+    feedback: SeriesPoint[];
   };
   by_model: { model: string; requests: number }[];
+  /** 按上游厂商 —— "网关做了路由"最直接的证据。 */
+  by_provider: { provider: string; requests: number }[];
   /** 护栏裁定分布 —— Portkey 约定: 446 拒绝, 246 标记但放行。 */
   guardrail: { denied: number; flagged: number; ok: number; other: number };
 };
