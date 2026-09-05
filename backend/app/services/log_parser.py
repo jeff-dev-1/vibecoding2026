@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from ..config import settings
 from ..schemas import ParsedLogEntry
@@ -179,3 +180,20 @@ def dominant_kind(entries: list[ParsedLogEntry]) -> str:
         return "access"
     n_err = sum(1 for e in entries if e.kind == "error")
     return "error" if n_err > len(entries) / 2 else "access"
+
+
+# 日志族 —— 比 kind 粗一级, 用来选"这份日志能问什么"。
+#
+# kind 是每行的形态 (access / error), family 是整份日志的性质:
+#   access  Nginx/Apache access log —— 有 path / status / UA / bytes
+#   system  Linux syslog / Apache error log —— 有 进程 / level / 消息文本, 没有 HTTP 字段
+#
+# 分开的理由很直接: 这两类日志能回答的问题**没有交集**。拿 access log 的
+# 七个场景 (状态码分布 / TOP 路径 / UA 分析 / URL 注入) 去问一份 sshd 认证日志,
+# 模型只能每次都回同一句"这不是 access log", 七个场景于是塌成一个答案。
+LogFamily = Literal["access", "system"]
+
+
+def dominant_family(entries: list[ParsedLogEntry]) -> LogFamily:
+    """整份日志属于哪一族。空日志按 access 处理 (和 dominant_kind 的兜底一致)。"""
+    return "system" if dominant_kind(entries) == "error" else "access"

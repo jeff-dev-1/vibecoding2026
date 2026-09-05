@@ -8,15 +8,19 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+import httpx
+from fastapi import APIRouter
 from sqlalchemy import text
 
 from .. import observability
 from ..config import settings
 from ..db import SessionLocal
-from ..prompts import RAG_SYSTEM_PROMPT, SCENARIO_PROMPTS
+from ..prompts import SCENARIO_PROMPTS, system_prompt
 from ..schemas import (
     GuardrailTestRequest,
     GuardrailTestResponse,
@@ -26,8 +30,8 @@ from ..schemas import (
     SupplyChainReport,
     SupplyChainVerdict,
 )
-from ..security.input_guard import check
 from ..security import supply_chain
+from ..security.input_guard import check
 
 router = APIRouter()
 
@@ -54,10 +58,17 @@ async def gateway_observability() -> dict:
 
 
 @router.get("/info")
-async def gateway_info() -> dict:
+async def gateway_info(provider: str | None = None) -> dict:
+    """控制面元信息。
+
+    `provider` 查询参数让前端能预览"切过去之后长什么样", 不传则用启动默认值。
+    护栏清单**随 provider 变**, 这是刻意的: 换网关就是换数据面, 护栏也跟着换位置,
+    界面照实反映, 而不是印一份和当前配置无关的静态清单。
+    """
+    active = provider if provider in ("envoy", "portkey") else settings.gateway_provider
     return {
-        "gateway": "Portkey (OSS)" if settings.gateway_provider == "portkey" else "Envoy AI Gateway",
-        "provider": settings.gateway_provider,
+        "provider": active,
+        "providers": _PROVIDERS,
         "default_backend": settings.default_backend,
         "backends": [
             {
@@ -65,7 +76,9 @@ async def gateway_info() -> dict:
                 "label": "DeepSeek",
                 "model": "deepseek-chat",
                 "upstream": "api.deepseek.com",
-                "routing": "默认 (无 X-LLM-Backend 头)",
+                "routing": (
+                    "x-portkey-config" if active == "portkey" else "默认 (无 X-LLM-Backend 头)"
+                ),
                 "default": settings.default_backend == "deepseek",
             },
             {
@@ -73,41 +86,64 @@ async def gateway_info() -> dict:
                 "label": "Qwen3-Coder",
                 "model": "qwen3-coder-plus",
                 "upstream": "dashscope.aliyuncs.com",
-                "routing": "X-LLM-Backend: qwen",
+                "routing": (
+                    "x-portkey-config" if active == "portkey" else "X-LLM-Backend: qwen"
+                ),
                 "default": settings.default_backend == "qwen",
             },
         ],
-        "guardrails": [
-            {
-                "id": "prompt-injection",
-                "label": "Prompt Injection 拦截",
-                "enabled": True,
-                "where": "Envoy Lua filter + backend input_guard (双层)",
-                "action": "Block (HTTP 400)",
-                "patterns": [
-                    "ignore previous instructions",
-                    "ignore all previous",
-                    "disregard the above",
-                    "you are now DAN",
-                ],
-            },
-            {
-                "id": "pii-redaction",
-                "label": "PII 脱敏",
-                "enabled": True,
-                "where": "backend input_guard 正则 + Gateway 标记头",
-                "action": "Redact",
-                "categories": ["EMAIL", "PHONE_CN", "ID_CARD_CN", "CARD", "IP"],
-            },
-            {
-                "id": "rate-limit",
-                "label": "限流",
-                "enabled": True,
-                "where": "Envoy local_ratelimit",
-                "action": "120 req/min/tenant",
-            },
-        ],
+        "guardrails": _guardrails(active),
     }
+
+
+
+
+# 只给 id —— label / kind / note 都是给人看的文案, 由前端按语言渲染。
+_PROVIDERS = [{"id": "envoy"}, {"id": "portkey"}]
+
+
+def _guardrails(active: str) -> list[dict]:
+    """当前 provider 下, 数据面上真实存在的护栏。
+
+    只返回 id 和事实数据 (是否启用、配置 id、规则名), **不返回给人看的文案** ——
+    label / where / action 都由前端按界面语言渲染。这里曾经带着中文 label,
+    于是界面切成 English 之后护栏卡片还是中文, 前端翻不了。
+
+    两边都有 backend 的 input_guard 兜底 —— 那一层和网关无关, 所以两边都列。
+    差别在网关那一层: Envoy 是自己的 Lua filter, Portkey 是托管护栏配置。
+    """
+    backend_layer = {
+        "id": "backend-input-guard",
+        "enabled": True,
+        "categories": ["EMAIL", "PHONE_CN", "ID_CARD_CN", "CARD", "IP"],
+    }
+
+    if active == "portkey":
+        return [
+            {
+                "id": "portkey-guardrail",
+                "enabled": bool(settings.portkey_config or settings.portkey_guardrail),
+                "config": settings.portkey_config,
+                "guardrail": settings.portkey_guardrail,
+            },
+            backend_layer,
+            {"id": "rate-limit-edge", "enabled": True},
+        ]
+
+    return [
+        {
+            "id": "prompt-injection",
+            "enabled": True,
+            "patterns": [
+                "ignore previous instructions",
+                "ignore all previous",
+                "disregard the above",
+                "you are now DAN",
+            ],
+        },
+        backend_layer,
+        {"id": "rate-limit-envoy", "enabled": True},
+    ]
 
 
 @router.post("/redteam-report")
@@ -227,15 +263,174 @@ async def get_pentest_report() -> PentestReport | dict:
 async def gateway_prompts() -> dict:
     """提示词管理 — 集中暴露所有受管 prompt 资产。"""
     return {
+        # 两族各一份 system prompt —— 面板要如实反映"资产不止一条"。
         "system_prompts": [
             {
-                "id": "rag-chat",
-                "label": "RAG 问答 system",
-                "content": RAG_SYSTEM_PROMPT,
-            },
+                "id": f"rag-chat-{family}",
+                "label": label,
+                "family": family,
+                "content": system_prompt(family),
+            }
+            for family, label in (
+                ("access", "RAG 问答 system · access log"),
+                ("system", "RAG 问答 system · 系统日志"),
+            )
         ],
         "scenario_prompts": [
-            {"id": sid, "title": v["title"], "content": v["prompt"]}
-            for sid, v in SCENARIO_PROMPTS.items()
+            {"id": sid, "title": v["title"], "family": family, "content": v["prompt"]}
+            for family, table in SCENARIO_PROMPTS.items()
+            for sid, v in table.items()
         ],
     }
+
+
+# ===== Portkey 分析代理 =====
+#
+# 为什么从 Portkey 拿, 而不是用 backend 自己的内存窗口:
+#   1. 内存窗口每次重启就清零 —— "Models & usage" 页面显示 "no calls yet" 而实际有调用,
+#      就是这个原因; 演示时重启一次后端, 账就没了。
+#   2. Portkey 那份是厂商自己的计量, 不是我们的估算。我们现在还得在界面上写
+#      "成本为估算量级(非账单)" 这句免责声明。
+#   3. 护栏裁定只有厂商侧有: 446 = DENY, 246 = 标记但放行。本地根本看不到 246,
+#      因为那种请求在我们这里是正常返回的。
+#
+# key 只在服务端用, 不下发给浏览器。
+
+_PORTKEY_ANALYTICS = "https://api.portkey.ai/v1/analytics"
+
+_WINDOWS: dict[str, int] = {"24h": 1, "7d": 7, "30d": 30}
+
+# 分析结果的短缓存 —— {window: (到期时间戳, 结果)}。
+#
+# 为什么要缓存: 这个端点一次要向 Portkey 打 10 个请求 (7 条曲线 + 3 个分组), 并行下来
+# 冷调用 ~2.2s。而"模型与用量"那页每次打开都会重新问一遍, 于是每次进去都先盯着
+# 一排空骨架等两秒。
+#
+# 为什么 60 秒是安全的: 这里展示的是 24h/7d/30d 的聚合量, 一分钟内的变化在这个尺度上
+# 看不出来。演示时刚问完一个问题想立刻看到它计入用量的话, 切一下时间窗即可 (不同 window
+# 是不同缓存键), 或者等下一分钟。
+#
+# 进程内字典就够了: 单副本部署, 且缓存丢了只是回到现在这个速度, 不影响正确性 ——
+# 不值得为它引入 redis (CLAUDE.md 里也明确不让加)。
+_ANALYTICS_TTL_S = 60.0
+_analytics_cache: dict[str, tuple[float, dict]] = {}
+
+
+async def _portkey_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
+    """取一个分析端点; 失败返回空 dict 而不是抛 —— 看板缺一条线, 不该让整页 500。"""
+    try:
+        r = await client.get(
+            f"{_PORTKEY_ANALYTICS}/{path}",
+            params=params,
+            headers={"x-portkey-api-key": settings.portkey_api_key},
+            timeout=20.0,
+        )
+        return r.json() if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
+@router.get("/analytics")
+async def gateway_analytics(window: str = "24h") -> dict:
+    """AI 网关用量 —— 直接取自 Portkey 的分析 API。
+
+    可用的序列只有这些: requests / cost / latency / tokens / errors / users / feedbacks;
+    分组只支持 ai_service, model, status_code, api_key, config, workspace, provider, prompt。
+    控制台上还有的 Rescued Requests 和 Cache **在这个 API 里没有对应端点** (试过
+    rescued / rescued-requests / cache / cache-hit-rate 等一圈都是 404), 所以没有做 ——
+    宁可少一块, 不编一个数出来。
+
+    返回时间序列 + 汇总 + 护栏裁定分布。没配 Portkey key 时返回 configured=False,
+    前端据此回落到本地内存窗口 (Envoy 路径下只有那一份)。
+    """
+    if not settings.portkey_api_key:
+        return {"configured": False, "window": window}
+
+    hit = _analytics_cache.get(window)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+
+    days = _WINDOWS.get(window, 1)
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    params = {
+        "time_of_generation_min": start.strftime("%Y-%m-%d"),
+        "time_of_generation_max": (end + timedelta(days=1)).strftime("%Y-%m-%d"),
+        # 只统计本应用的流量。同一个 Portkey 账号下还有别的应用, 不过滤的话这里显示的
+        # 是整个账号的数字 —— 看起来很热闹, 但和这个 demo 无关。
+        "metadata": json.dumps({"app": "alad"}),
+    }
+
+    async with httpx.AsyncClient() as client:
+        (
+            requests_g, cost_g, latency_g, tokens_g, errors_g, users_g,
+            feedback_g, models, codes, providers,
+        ) = await asyncio.gather(
+            _portkey_get(client, "graphs/requests", params),
+            _portkey_get(client, "graphs/cost", params),
+            _portkey_get(client, "graphs/latency", params),
+            _portkey_get(client, "graphs/tokens", params),
+            _portkey_get(client, "graphs/errors", params),
+            _portkey_get(client, "graphs/users", params),
+            _portkey_get(client, "graphs/feedbacks", params),
+            _portkey_get(client, "groups/model", params),
+            _portkey_get(client, "groups/status_code", params),
+            _portkey_get(client, "groups/provider", params),
+        )
+
+    def series(g: dict, field: str) -> list[dict]:
+        return [
+            {"t": p.get("timestamp"), "v": p.get(field) or 0}
+            for p in (g.get("data_points") or [])
+        ]
+
+    by_code = {
+        int(d["status_code"]): d.get("requests", 0)
+        for d in (codes.get("data") or [])
+        if d.get("status_code") is not None
+    }
+
+    payload = {
+        "configured": True,
+        "window": window,
+        "since": start.isoformat(),
+        "summary": {
+            "requests": (requests_g.get("summary") or {}).get("total", 0),
+            "cost_usd": (cost_g.get("summary") or {}).get("total", 0),
+            "tokens": (tokens_g.get("summary") or {}).get("total", 0),
+            "latency_p50": (latency_g.get("summary") or {}).get("p50", 0),
+            "latency_p90": (latency_g.get("summary") or {}).get("p90", 0),
+            "errors": (errors_g.get("summary") or {}).get("total", 0),
+            "users": (users_g.get("summary") or {}).get("total", 0),
+            "feedback": (feedback_g.get("summary") or {}).get("total", 0),
+        },
+        "series": {
+            "requests": series(requests_g, "total"),
+            "cost": series(cost_g, "total"),
+            "tokens": series(tokens_g, "total"),
+            "latency": series(latency_g, "p50"),
+            "errors": series(errors_g, "total"),
+            "users": series(users_g, "total"),
+            "feedback": series(feedback_g, "total"),
+        },
+        "by_model": [
+            {"model": d.get("model"), "requests": d.get("requests", 0)}
+            for d in (models.get("data") or [])
+        ],
+        # 按上游厂商分组 —— 这是"网关做了路由"最直接的证据。
+        "by_provider": [
+            {"provider": d.get("provider"), "requests": d.get("requests", 0)}
+            for d in (providers.get("data") or [])
+        ],
+        # 护栏裁定 —— Portkey 的约定: 446 拒绝, 246 标记但放行, 其余是正常/错误。
+        "guardrail": {
+            "denied": by_code.get(446, 0),
+            "flagged": by_code.get(246, 0),
+            "ok": by_code.get(200, 0),
+            "other": sum(v for k, v in by_code.items() if k not in (200, 246, 446)),
+        },
+    }
+
+    # 存一份, 下次同一时间窗直接返回 (见 _ANALYTICS_TTL_S 处的说明)
+    _analytics_cache[window] = (time.monotonic() + _ANALYTICS_TTL_S, payload)
+    return payload

@@ -24,3 +24,15 @@ infra/tls/certs/
 # testdata 样本日志要入仓 (覆盖上面的 *.log)
 !testdata/
 !testdata/*.log
+
+# 前端增量类型检查缓存
+frontend/tsconfig.tsbuildinfo
+
+# 本地验证产物 (浏览器截图 / 快照), 不入仓
+.playwright-mcp/
+.tmp-refimg/
+*.png
+!docs/**/*.png
+
+# Next.js 自动生成的类型引用文件
+frontend/next-env.d.ts

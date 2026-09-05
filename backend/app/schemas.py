@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
 
+from .prompts import DEFAULT_ANSWER_LANG, AnswerLang
+
 
 LogSource = Literal["nginx", "app", "custom"]
+# 日志族 —— 决定"这份日志能问什么"。与 services.log_parser.LogFamily 同一套取值。
+LogFamily = Literal["access", "system"]
 JobStatus = Literal["pending", "running", "done", "failed"]
 
 # Backend selector — Gateway 看这个 header 决定上游模型
@@ -140,6 +144,16 @@ class JobResponse(BaseModel):
     analysis: LogAnalysis | None = None
     # 新: 解析后的样本日志条目 (前端表格用)
     sample_entries: list[ParsedLogEntry] | None = None
+    # 日志族 —— 前端据此决定显示哪一组场景卡。
+    # access log 的场景 (状态码/TOP 路径/UA/URL 注入) 问到 syslog 上会全部落空,
+    # 七个场景于是塌成同一句"这不是 access log"。族要跟着数据走, 不能写死。
+    log_family: LogFamily = "access"
+    # 系统日志里出现过的服务/进程数 (sshd、su、cron、logrotate…)。access 族恒为 0。
+    #
+    # 放在这里而不是 analysis.traffic 里, 和 log_family 一样在**读取时**从
+    # sample_entries 派生 —— 写进 analysis 的话只有以后新分析的 job 才有这个数,
+    # 库里已有的 job 会显示 0, 那就成了另一张假卡片。
+    distinct_processes: int = 0
 
 
 # ===== Chat =====
@@ -150,6 +164,13 @@ class ChatRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     backend: LLMBackend = "deepseek"
     scenario: str | None = Field(default=None, max_length=80, description="VS 综合 / 健康巡检 / SSL / 告警 / 慢根因 / 错误码 / 安全运营")
+    # 回答语言 —— 跟着读者的界面语言走。缺省简体, 和前端的回落规则一致。
+    # 只影响散文的语言; 日志原文/路径/IP/状态码这些证据永远不翻译。
+    lang: AnswerLang = DEFAULT_ANSWER_LANG
+    # 网关 provider —— 现场可切, 不用改 .env 重启。留空则用启动时的默认值。
+    # 切换会连带改变护栏的位置: envoy 是自建数据面里的 Lua filter,
+    # portkey 是托管控制面上的 guardrail 配置。界面要如实反映这一点。
+    provider: Literal["envoy", "portkey"] | None = None
 
 
 class Citation(BaseModel):
@@ -159,6 +180,35 @@ class Citation(BaseModel):
     line_end: int
     excerpt: str = Field(..., max_length=400)
     score: float
+
+
+class TraceStep(BaseModel):
+    """链路上的一跳。前端的"请求链路回放"逐步播放这个列表。
+
+    每一跳都是真的发生过的: ms 是量出来的, detail 里的数字来自那一跳自己的返回,
+    没走到的跳不出现在列表里 (例如被护栏拦下时就没有 retrieval / llm 两跳)。
+    """
+
+    id: Literal["guard", "retrieval", "gateway", "llm"]
+    ok: bool = True
+    ms: int = 0
+    # 一行人话的结论, 前端可直接显示; 具体键值放 detail 让人展开看。
+    summary: str = ""
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatTrace(BaseModel):
+    steps: list[TraceStep] = Field(default_factory=list)
+    total_ms: int = 0
+    backend: LLMBackend
+    model: str
+    provider: str = "envoy"
+    # 厂商侧的 trace id + 控制台链接。界面显示它, 让人能一步跳过去对账 ——
+    # 我们不复刻 Portkey 的日志表, 它的每请求读接口不可用 (导出流程 start 返回 500)。
+    trace_id: str = ""
+    console_url: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class ChatResponse(BaseModel):
@@ -172,6 +222,8 @@ class ChatResponse(BaseModel):
     redacted: bool = False
     redaction_rules: list[str] = Field(default_factory=list)
     redaction_preview: str | None = None
+    # 这一次请求实际走过的链路 (计时/用量/路由)。被护栏拦下时也有, 只是只有 guard 一跳。
+    trace: ChatTrace | None = None
 
 
 # ===== Guardrail test (现场测试用, 不改配置) =====

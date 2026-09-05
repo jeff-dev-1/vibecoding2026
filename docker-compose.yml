@@ -79,8 +79,17 @@ services:
       LLM_GATEWAY_URL: http://envoy-ai-gateway:8080
       LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-demo-key-not-secret}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
-      # 网关 provider 可切换: envoy (默认) | portkey
-      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-envoy}
+      # 网关 provider 可切换: envoy (自建数据面) | portkey (托管控制面)
+      # 这是启动默认值; 单次请求可用 ChatRequest.provider 覆盖 —— 演示要能当场切。
+      GATEWAY_PROVIDER: ${GATEWAY_PROVIDER:-portkey}
+      # Portkey 托管版。护栏 (可接 Prisma AIRS) 挂在 pc-/pg- 配置上, 命中回 446。
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_CONFIG: ${PORTKEY_CONFIG:-}
+      PORTKEY_GUARDRAIL: ${PORTKEY_GUARDRAIL:-}
+      PORTKEY_VIRTUAL_KEY: ${PORTKEY_VIRTUAL_KEY:-}
+      PORTKEY_ORG_ID: ${PORTKEY_ORG_ID:-}
+      # 自建 OSS 版的地址 (走 OSS 路径时把 PORTKEY_BASE_URL 指到它)
       PORTKEY_URL: ${PORTKEY_URL:-http://gateway-portkey:8787}
       # portkey 路径下 backend 需自带 provider key 透传 (Envoy 路径不用)
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -113,11 +122,16 @@ services:
     environment:
       # Next.js 服务端 rewrites 读取,容器内部 DNS,不依赖宿主机 IP
       INTERNAL_BACKEND_URL: http://backend:8000
-      # 登录凭证 (默认 admin / vibecoding2026, 可在 .env 覆盖)
-      DEMO_USERNAME: ${DEMO_USERNAME:-admin}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-vibecoding2026}
+      # 登录凭证 — 必须在 .env 里配置, 没有默认值
+      # 登录只要一个共享访问码; DEMO_PASSWORD 是旧名, 一起传下去不破坏已有 .env。
+      # 没有默认值 —— 未配置时前端拒绝全部登录 (见 frontend/src/lib/session.ts)
+      DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      # 会话 cookie 签名密钥; 留空则从访问码派生 (见 frontend/src/lib/session.ts)
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
 
   nginx-tls:
     image: nginx:1.27-alpine

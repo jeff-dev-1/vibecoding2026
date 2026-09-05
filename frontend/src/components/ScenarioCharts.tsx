@@ -13,20 +13,62 @@ import {
   YAxis,
 } from "recharts";
 import type { Job, ParsedLogEntry } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { useTokenColors, type TokenColors } from "@/lib/tokens";
 
-// 从已算好的结构化数据出图表 — 让 AI 助手结果"fancy"。
-// 不依赖 LLM 文本, 数据准确。
+// 从已算好的结构化数据出图表 — 不依赖 LLM 文本, 数据准确。
+//
+// 图表跟着**场景**走, 不是每次都把四张图全铺出来。
+// 之前每个场景都渲染同一组图, 于是七个场景在视觉上长得一模一样 —— 问"用户名枚举"
+// 和问"服务异常" 顶上都是同一张状态码环图。图要能回答那个场景的问题才放。
 
-const COLORS = ["#6366f1", "#f97316", "#10b981", "#f43f5e", "#0ea5e9", "#a855f7", "#eab308"];
+type ChartKey = "status" | "patterns" | "ips" | "severity";
 
-function statusColor(code: string) {
-  if (code.startsWith("5")) return "#f43f5e";
-  if (code.startsWith("4")) return "#f59e0b";
-  if (code.startsWith("3")) return "#0ea5e9";
-  return "#10b981";
+// 场景 → 该场景值得看的图。列表为空 = 这个场景的答案是文字, 不配图 ——
+// 与其塞一张无关的图, 不如不塞。
+const CHART_PLAN: Record<string, ChartKey[]> = {
+  // access log
+  "traffic-overview": ["status", "patterns", "ips"],
+  "error-analysis": ["status", "patterns"],
+  "scan-detection": ["patterns", "ips"],
+  "bigresp-analysis": ["patterns"],
+  "bot-ua": [],
+  "ip-rate": ["ips"],
+  "url-injection": ["severity"],
+  // 系统日志 —— status 在这一族里渲染的是 level 分布, patterns 是 TOP 消息
+  "sys-overview": ["status", "patterns"],
+  "sys-auth-failure": ["status", "ips"],
+  "sys-brute-force": ["ips", "severity"],
+  "sys-user-enum": ["ips"],
+  "sys-privilege": ["patterns"],
+  "sys-service-health": ["status", "patterns"],
+  "sys-timeline": [],
+};
+
+// 分类色板从 token 出, 不写死十六进制 —— 否则深色模式下这几张图还是浅色那一套。
+const palette = (c: TokenColors) => [c.primary, c.orange, c.blue, c.red, c.green, c.muted, c.ink];
+
+// 状态码有约定俗成的语义色: 5xx 红 / 4xx 橙 / 3xx 蓝 / 2xx 绿。
+function statusColor(code: string, c: TokenColors) {
+  if (code.startsWith("5")) return c.red;
+  if (code.startsWith("4")) return c.orange;
+  if (code.startsWith("3")) return c.blue;
+  return c.green;
 }
 
-export function ScenarioCharts({ job }: { job: Job }) {
+export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }) {
+  const plan = CHART_PLAN[scenario];
+  const show = (k: ChartKey) => (plan ? plan.includes(k) : true);
+  const { t } = useI18n();
+  const c = useTokenColors();
+  const COLORS = palette(c);
+  const tip = {
+    fontSize: 12,
+    borderRadius: 8,
+    border: `1px solid ${c.line}`,
+    background: c.card,
+    color: c.ink,
+  };
   const a = job.analysis;
   const entries = job.sample_entries ?? [];
   const isError =
@@ -78,12 +120,12 @@ export function ScenarioCharts({ job }: { job: Job }) {
     return Object.entries(m).map(([name, value]) => ({ name, value }));
   }, [a]);
 
-  if (!a) return null;
+  if (!a || (plan && plan.length === 0)) return null;
 
   return (
     <div className="grid grid-cols-1 gap-3">
-      {statusDist.length > 0 && (
-        <ChartCard title={isError ? "日志级别分布" : "状态码分布"}>
+      {show("status") && statusDist.length > 0 && (
+        <ChartCard title={isError ? t("chart.levelDist") : t("chart.statusDist")}>
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
               <Pie
@@ -102,18 +144,18 @@ export function ScenarioCharts({ job }: { job: Job }) {
                 {statusDist.map((d, i) => (
                   <Cell
                     key={i}
-                    fill={isError ? COLORS[i % COLORS.length] : statusColor(d.name)}
+                    fill={isError ? COLORS[i % COLORS.length] : statusColor(d.name, c)}
                   />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+              <Tooltip contentStyle={tip} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
       )}
 
-      {topPatterns.length > 0 && (
-        <ChartCard title={isError ? "TOP 错误模式" : "TOP 访问路径"}>
+      {show("patterns") && topPatterns.length > 0 && (
+        <ChartCard title={isError ? t("chart.topErrors") : t("chart.topPaths")}>
           <ResponsiveContainer width="100%" height={Math.max(120, topPatterns.length * 26)}>
             <BarChart data={topPatterns} layout="vertical" margin={{ left: 8, right: 16 }}>
               <XAxis type="number" hide />
@@ -121,18 +163,18 @@ export function ScenarioCharts({ job }: { job: Job }) {
                 type="category"
                 dataKey="name"
                 width={130}
-                tick={{ fontSize: 10 }}
-                stroke="#94a3b8"
+                tick={{ fontSize: 10, fill: c.muted }}
+                stroke={c.muted}
               />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-              <Bar dataKey="hits" fill="#6366f1" radius={[0, 4, 4, 0]} />
+              <Tooltip contentStyle={tip} />
+              <Bar dataKey="hits" fill={c.primary} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       )}
 
-      {topIps.length > 0 && (
-        <ChartCard title="TOP 源 IP">
+      {show("ips") && topIps.length > 0 && (
+        <ChartCard title={t("chart.topIps")}>
           <ResponsiveContainer width="100%" height={Math.max(120, topIps.length * 26)}>
             <BarChart data={topIps} layout="vertical" margin={{ left: 8, right: 16 }}>
               <XAxis type="number" hide />
@@ -140,18 +182,18 @@ export function ScenarioCharts({ job }: { job: Job }) {
                 type="category"
                 dataKey="name"
                 width={120}
-                tick={{ fontSize: 10 }}
-                stroke="#94a3b8"
+                tick={{ fontSize: 10, fill: c.muted }}
+                stroke={c.muted}
               />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-              <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} />
+              <Tooltip contentStyle={tip} />
+              <Bar dataKey="value" fill={c.orange} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       )}
 
-      {sevDist.length > 0 && (
-        <ChartCard title="事件严重度">
+      {show("severity") && sevDist.length > 0 && (
+        <ChartCard title={t("chart.severity")}>
           <ResponsiveContainer width="100%" height={140}>
             <PieChart>
               <Pie
@@ -169,7 +211,7 @@ export function ScenarioCharts({ job }: { job: Job }) {
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+              <Tooltip contentStyle={tip} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -180,8 +222,8 @@ export function ScenarioCharts({ job }: { job: Job }) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-1.5 text-xs font-medium text-slate-600">{title}</div>
+    <div className="rounded-lg border border-line bg-card p-3">
+      <div className="mb-1.5 text-xs font-medium text-muted">{title}</div>
       {children}
     </div>
   );

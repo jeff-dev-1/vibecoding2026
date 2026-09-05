@@ -74,19 +74,24 @@ export type GatewayBackend = {
   default: boolean;
 };
 
+// 后端只给 id 和事实数据; label / where / action 由前端按语言渲染 (gr.* 键)。
 export type GatewayGuardrail = {
   id: string;
-  label: string;
   enabled: boolean;
-  where: string;
-  action: string;
   patterns?: string[];
   categories?: string[];
+  /** Portkey 路径下的配置 id, 拼进 where 文案里 —— 是事实, 不是文案。 */
+  config?: string;
+  guardrail?: string;
 };
 
+export type GatewayProvider = "envoy" | "portkey";
+
+export type ProviderMeta = { id: GatewayProvider };
+
 export type GatewayInfo = {
-  gateway: string;
-  provider?: string;
+  provider?: GatewayProvider;
+  providers?: ProviderMeta[];
   default_backend: string;
   backends: GatewayBackend[];
   guardrails: GatewayGuardrail[];
@@ -115,6 +120,9 @@ export type ParsedLogEntry = {
   message?: string | null;
 };
 
+/** access = Nginx/Apache access log; system = Linux syslog / Apache error_log */
+export type LogFamily = "access" | "system";
+
 export type Job = {
   id: string;
   log_id: string;
@@ -123,6 +131,10 @@ export type Job = {
   evidence?: EvidenceItem[] | null;
   analysis?: LogAnalysis | null;
   sample_entries?: ParsedLogEntry[] | null;
+  /** 日志族 —— 决定 AI 助手显示哪一组场景卡。后端按解析结果判定。 */
+  log_family?: LogFamily;
+  /** 系统日志里出现过的服务/进程数。access 族为 0。 */
+  distinct_processes?: number;
   error?: string | null;
   created_at: string;
   finished_at?: string | null;
@@ -131,6 +143,32 @@ export type Job = {
 export type Citation = EvidenceItem & { score: number };
 
 export type LLMBackend = "deepseek" | "qwen";
+
+// ===== 请求链路 (控制面的"链路回放"消费这个) =====
+// 后端每一跳自己计时后返回, 前端只负责画。没走到的跳不会出现在 steps 里,
+// 所以回放器不需要 (也不允许) 为了动画顺滑而补一个假节点。
+export type TraceStepId = "guard" | "retrieval" | "gateway" | "llm";
+
+export type TraceStep = {
+  id: TraceStepId;
+  ok: boolean;
+  ms: number;
+  summary: string;
+  detail: Record<string, unknown>;
+};
+
+export type ChatTrace = {
+  steps: TraceStep[];
+  total_ms: number;
+  backend: LLMBackend;
+  model: string;
+  provider: string;
+  /** Portkey 侧 trace id + 控制台链接 —— 用来跳过去对账, 我们不复刻它的日志表。 */
+  trace_id?: string;
+  console_url?: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+};
 
 export type ChatResponse = {
   answer: string;
@@ -142,6 +180,7 @@ export type ChatResponse = {
   redacted?: boolean;
   redaction_rules?: string[];
   redaction_preview?: string | null;
+  trace?: ChatTrace | null;
 };
 
 async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -164,8 +203,14 @@ export async function getJob(id: string) {
   return _fetch<Job>(`/logs/jobs/${id}`);
 }
 
+// 客户端回退路径 —— 和 SSR 预取取同一份数据 (最近一次完成的分析), 同样只取 1 条。
+// 拉 10 条完整 job 只为挑 1 条, 传输量是需要量的 10 倍 (每个 job 带 1000 条明细)。
+//
+// 先要 done 的; 一条都没有时 (刚上传、还在分析) 再取最近一条, 让页面能显示"分析中"
+// 而不是"暂无数据"。第二次请求只在确实没有完成分析时才发生。
 export async function listJobs() {
-  return _fetch<Job[]>(`/logs?limit=10`);
+  const done = await _fetch<Job[]>(`/logs?limit=1&status=done`);
+  return done.length > 0 ? done : await _fetch<Job[]>(`/logs?limit=1`);
 }
 
 export async function chat(args: {
@@ -173,6 +218,10 @@ export async function chat(args: {
   log_id?: string;
   backend?: LLMBackend;
   scenario?: string;
+  /** 界面语言 —— 模型用它决定散文用哪种语言作答。证据 (日志原文/IP/路径) 不受影响。 */
+  lang?: string;
+  /** 网关 provider —— 现场可切, 不传则用后端启动默认值。 */
+  provider?: GatewayProvider;
 }) {
   return _fetch<ChatResponse>("/chat/query", {
     method: "POST",
@@ -183,12 +232,15 @@ export async function chat(args: {
       top_k: 5,
       backend: args.backend ?? "deepseek",
       scenario: args.scenario,
+      lang: args.lang ?? "zh-Hans",
+      provider: args.provider,
     }),
   });
 }
 
-export async function gatewayInfo() {
-  return _fetch<GatewayInfo>("/gateway/info");
+/** provider 可选 —— 传了就预览那个 provider 的配置 (护栏清单会跟着变)。 */
+export async function gatewayInfo(provider?: string) {
+  return _fetch<GatewayInfo>(`/gateway/info${provider ? `?provider=${provider}` : ""}`);
 }
 
 export async function gatewayPrompts() {
@@ -292,7 +344,7 @@ export type SupplyChainVerdict = {
 };
 export type SupplyChainSamples = {
   enabled: boolean;
-  marketplaces: { id: string; label: string }[];
+  marketplaces: { id: string }[];
   samples: { marketplace: string; item_id: string; label: string }[];
 };
 
@@ -381,4 +433,42 @@ export type Observability = {
 
 export async function gatewayObservability() {
   return _fetch<Observability>("/gateway/observability");
+}
+
+
+// ===== AI 网关用量 (取自 Portkey 分析 API, 后端代理) =====
+export type SeriesPoint = { t: string; v: number };
+
+export type Analytics = {
+  configured: boolean;
+  window: string;
+  since?: string;
+  summary: {
+    requests: number;
+    cost_usd: number;
+    tokens: number;
+    latency_p50: number;
+    latency_p90: number;
+    errors: number;
+    users: number;
+    feedback: number;
+  };
+  series: {
+    requests: SeriesPoint[];
+    cost: SeriesPoint[];
+    tokens: SeriesPoint[];
+    latency: SeriesPoint[];
+    errors: SeriesPoint[];
+    users: SeriesPoint[];
+    feedback: SeriesPoint[];
+  };
+  by_model: { model: string; requests: number }[];
+  /** 按上游厂商 —— "网关做了路由"最直接的证据。 */
+  by_provider: { provider: string; requests: number }[];
+  /** 护栏裁定分布 —— Portkey 约定: 446 拒绝, 246 标记但放行。 */
+  guardrail: { denied: number; flagged: number; ok: number; other: number };
+};
+
+export async function gatewayAnalytics(window = "24h") {
+  return _fetch<Analytics>(`/gateway/analytics?window=${window}`);
 }

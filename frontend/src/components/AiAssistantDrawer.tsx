@@ -1,79 +1,175 @@
 "use client";
 
+import {
+  AlertTriangle,
+  ArrowUp,
+  BarChart3,
+  Bot,
+  Box,
+  Check,
+  ChevronRight,
+  Clock,
+  KeyRound,
+  LayoutGrid,
+  Copy as CopyIcon,
+  ExternalLink,
+  Gauge,
+  Loader2,
+  ListTree,
+  Search,
+  ServerCog,
+  ShieldAlert,
+  Sparkles,
+  UserCog,
+  Users,
+  TriangleAlert,
+  Waypoints,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
-import { chat, type ChatResponse, type Job, type LLMBackend } from "@/lib/api";
+import {
+  chat,
+  type ChatResponse,
+  type ChatTrace,
+  type GatewayProvider,
+  type Job,
+  type LLMBackend,
+  type LogFamily,
+} from "@/lib/api";
+import { AnswerTrace } from "./AnswerTrace";
 import { Markdown } from "./Markdown";
 import { ScenarioCharts } from "./ScenarioCharts";
+import { useI18n, type Key } from "@/lib/i18n";
 
+// 标题和说明都是字典键 —— 场景卡是产品界面, 跟着语言走。
+// 发给后端的 scenario id 不翻译: 它是后端 prompts 表的查找键, 翻译了就查不到了。
 type Scenario = {
   id: string;
-  title: string;
-  icon: string;
-  badge: "P0" | "P1" | "P2";
+  title: Key;
+  desc: Key;
+  icon: LucideIcon;
   color: string;
-  desc: string;
 };
 
-// 全部基于 Nginx access log 真实字段, 无证据来源的场景 (VS/SSL/告警) 已删
-const SCENARIOS: Scenario[] = [
+// 场景卡按**日志族**分两组 —— 后端 SCENARIO_PROMPTS 的 id 与这里一一对应。
+//
+// 为什么必须分组: 这七张 access 卡问的全是 HTTP 字段 (状态码 / 路径 / UA / URL 注入)。
+// 上传一份 sshd 认证日志之后, 七个场景问的东西日志里一个都没有, 模型只能每次都回
+// 同一句"这不是 access log 数据", 于是七张卡产出同一个答案 —— 卡片看着有七个,
+// 实际只有一个。族跟着数据走, 卡片才问得出七个不同的答案。
+const ACCESS_SCENARIOS: Scenario[] = [
   {
     id: "traffic-overview",
-    title: "流量概览",
-    icon: "📊",
-    badge: "P0",
-    color: "bg-violet-100 text-violet-700",
-    desc: "总量/状态码分布/TOP 路径/TOP IP",
+    title: "sc.traffic",
+    icon: BarChart3,
+    color: "bg-primary/15 text-primary",
+    desc: "sc.traffic.d",
   },
   {
     id: "error-analysis",
-    title: "错误码分析",
-    icon: "⚠️",
-    badge: "P0",
-    color: "bg-orange-100 text-orange-700",
-    desc: "4xx/5xx 分布 + 集中时段/IP + 根因",
+    title: "sc.error",
+    icon: TriangleAlert,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.error.d",
   },
   {
     id: "scan-detection",
-    title: "扫描与枚举检测",
-    icon: "🔍",
-    badge: "P0",
-    color: "bg-rose-100 text-rose-700",
-    desc: "/admin 枚举/404 风暴/顺序探测",
+    title: "sc.scan",
+    icon: Search,
+    color: "bg-brand-red/20 text-brand-red",
+    desc: "sc.scan.d",
   },
   {
     id: "bigresp-analysis",
-    title: "大响应/异常体积",
-    icon: "📦",
-    badge: "P1",
-    color: "bg-sky-100 text-sky-700",
-    desc: "基于 bytes_sent 找疑似批量导出",
+    title: "sc.bigresp",
+    icon: Box,
+    color: "bg-brand-blue/20 text-brand-blue",
+    desc: "sc.bigresp.d",
   },
   {
     id: "bot-ua",
-    title: "可疑 UA 与 Bot",
-    icon: "🤖",
-    badge: "P1",
-    color: "bg-emerald-100 text-emerald-700",
-    desc: "搜索引擎 Bot vs 工具型/伪造 UA",
+    title: "sc.bot",
+    icon: Bot,
+    color: "bg-brand-green/20 text-brand-green",
+    desc: "sc.bot.d",
   },
   {
     id: "ip-rate",
-    title: "异常源 IP 与速率",
-    icon: "🚦",
-    badge: "P0",
-    color: "bg-amber-100 text-amber-700",
-    desc: "单 IP 高频/IP 段爆发/疑似 DoS",
+    title: "sc.iprate",
+    icon: Gauge,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.iprate.d",
   },
   {
     id: "url-injection",
-    title: "URL 注入特征",
-    icon: "🛡️",
-    badge: "P0",
-    color: "bg-indigo-100 text-indigo-700",
-    desc: "path/query 里 SQLi/XSS/路径穿越",
+    title: "sc.injection",
+    icon: ShieldAlert,
+    color: "bg-primary/15 text-primary",
+    desc: "sc.injection.d",
   },
 ];
+
+// Linux syslog / auth.log / Apache error_log —— 问进程、level、用户名、rhost、会话。
+const SYSTEM_SCENARIOS: Scenario[] = [
+  {
+    id: "sys-overview",
+    title: "sc.sysOverview",
+    icon: ListTree,
+    color: "bg-primary/15 text-primary",
+    desc: "sc.sysOverview.d",
+  },
+  {
+    id: "sys-auth-failure",
+    title: "sc.sysAuth",
+    icon: KeyRound,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.sysAuth.d",
+  },
+  {
+    id: "sys-brute-force",
+    title: "sc.sysBrute",
+    icon: ShieldAlert,
+    color: "bg-brand-red/20 text-brand-red",
+    desc: "sc.sysBrute.d",
+  },
+  {
+    id: "sys-user-enum",
+    title: "sc.sysEnum",
+    icon: Users,
+    color: "bg-brand-blue/20 text-brand-blue",
+    desc: "sc.sysEnum.d",
+  },
+  {
+    id: "sys-privilege",
+    title: "sc.sysPriv",
+    icon: UserCog,
+    color: "bg-brand-red/20 text-brand-red",
+    desc: "sc.sysPriv.d",
+  },
+  {
+    id: "sys-service-health",
+    title: "sc.sysService",
+    icon: ServerCog,
+    color: "bg-brand-green/20 text-brand-green",
+    desc: "sc.sysService.d",
+  },
+  {
+    id: "sys-timeline",
+    title: "sc.sysTimeline",
+    icon: Clock,
+    color: "bg-brand-orange/20 text-brand-orange",
+    desc: "sc.sysTimeline.d",
+  },
+];
+
+const SCENARIOS_BY_FAMILY: Record<LogFamily, Scenario[]> = {
+  access: ACCESS_SCENARIOS,
+  system: SYSTEM_SCENARIOS,
+};
+
+const ALL_SCENARIOS = [...ACCESS_SCENARIOS, ...SYSTEM_SCENARIOS];
 
 type Props = {
   open: boolean;
@@ -82,6 +178,12 @@ type Props = {
   job?: Job | null;
   backend: LLMBackend;
   onBackendChange: (b: LLMBackend) => void;
+  /** 走哪个网关 —— 由控制面选定, 提问时随请求带过去。 */
+  provider: GatewayProvider;
+  /** 每次拿到带 trace 的回答就往上抛, 控制面的回放器要用它。 */
+  onTrace: (t: ChatTrace, question: string, citations: number) => void;
+  /** 「查看本次链路回放」—— 直接跳到控制面的回放那一项。 */
+  onOpenReplay: () => void;
 };
 
 export function AiAssistantDrawer({
@@ -91,30 +193,51 @@ export function AiAssistantDrawer({
   job,
   backend,
   onBackendChange,
+  provider,
+  onTrace,
+  onOpenReplay,
 }: Props) {
+  const { t, lang } = useI18n();
   const [question, setQuestion] = useState("");
+  const [asked, setAsked] = useState<string>("");
   const [scenario, setScenario] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resp, setResp] = useState<ChatResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 场景卡是否展开。答完一次自动收起 (别一直占着半屏), 但顶上留一个开关随时叫回来 ——
+  // 原来收起之后只能 logout 再 login 才看得到, 那不是"收起", 那是"没了"。
+  const [showCards, setShowCards] = useState(true);
+
+  // 这份日志属于哪一族, 就给哪一组卡片。后端判定, 前端不重复猜。
+  const family: LogFamily = job?.log_family ?? "access";
+  const scenarios = SCENARIOS_BY_FAMILY[family] ?? ACCESS_SCENARIOS;
 
   async function run(args: { scenarioId?: string; q?: string }) {
     const finalQ = args.q ?? question;
     if (!finalQ.trim() && !args.scenarioId) return;
     // 自由提问 (来自输入框) 发送后清空输入框
     const fromInput = args.q === undefined && !args.scenarioId;
+    const picked = ALL_SCENARIOS.find((s) => s.id === args.scenarioId);
+    const label = finalQ || (picked ? t(picked.title) : finalQ);
     setBusy(true);
     setErr(null);
+    setAsked(label);
     try {
       const r = await chat({
-        question: finalQ || (args.scenarioId ?? "请分析当前日志"),
+        question: finalQ || t("ai.fallbackQuestion"),
         log_id: logId,
         backend,
         scenario: args.scenarioId,
+        // 让模型用读者正在看的语言作答 —— 界面切成 English 而答案还是中文是最扎眼的漏译。
+        lang,
+        provider,
       });
       setResp(r);
       setScenario(args.scenarioId ?? null);
+      setShowCards(false);
       if (fromInput) setQuestion("");
+      // 真实链路交给控制面 —— 回放器优先放真的, 没有才放剧本。
+      if (r.trace) onTrace(r.trace, label, r.citations.length);
     } catch (e: any) {
       setErr(String(e?.message || e));
     } finally {
@@ -123,185 +246,281 @@ export function AiAssistantDrawer({
   }
 
   return (
-    <>
-      {/* 并排面板 — 无 backdrop, 不遮挡主页 (主页自身收窄留出空间) */}
-      <aside
-        className={clsx(
-          "fixed right-0 top-0 z-40 flex h-screen w-[440px] flex-col border-l border-slate-200 bg-white shadow-xl transition-transform",
-          open ? "translate-x-0" : "translate-x-full",
-        )}
-      >
-        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">✨</span>
-            <div>
-              <h2 className="text-base font-semibold text-slate-800">AI 日志分析助手</h2>
-              <div className="text-[11px] text-slate-400">Nginx / Apache / syslog · 走 Envoy AI Gateway</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={backend}
-              onChange={(e) => onBackendChange(e.target.value as LLMBackend)}
-              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
-              title="选择模型上游 (Gateway header 路由)"
-            >
-              <option value="deepseek">DeepSeek</option>
-              <option value="qwen">Qwen3-Coder</option>
-            </select>
-            <button
-              onClick={onClose}
-              className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            >
-              ✕
-            </button>
-          </div>
-        </header>
+    // 并排面板 — 无 backdrop, 不遮挡主页 (主页自身收窄留出空间)
+    <aside
+      className={clsx(
+        "fixed right-0 top-0 z-40 flex h-screen w-[460px] flex-col border-l border-line bg-card transition-transform",
+        open ? "translate-x-0" : "translate-x-full",
+      )}
+    >
+      <header className="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+        <div className="flex items-center gap-2.5">
+          <Sparkles className="size-5 shrink-0 text-primary" />
+          <h2 className="text-sm font-semibold text-ink">{t("ai.title")}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* 场景卡开关 —— 答完一次卡片收起来, 但要能叫回来。
+              原来收起之后没有任何入口, 只能登出重登, 于是"七个一键场景"变成了一次性的。 */}
+          <button
+            onClick={() => setShowCards((v) => !v)}
+            aria-pressed={showCards}
+            title={t("ai.toggleScenarios")}
+            className={clsx(
+              "grid size-7 place-items-center rounded-lg border transition",
+              showCards
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-line text-muted hover:text-ink",
+            )}
+          >
+            <LayoutGrid className="size-4" />
+          </button>
+          <select
+            value={backend}
+            onChange={(e) => onBackendChange(e.target.value as LLMBackend)}
+            className="rounded-lg border border-line bg-card px-2 py-1 text-xs text-ink"
+            title={t("ai.backendPicker")}
+          >
+            <option value="deepseek">DeepSeek</option>
+            <option value="qwen">Qwen3-Coder</option>
+          </select>
+          <button
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="grid size-7 place-items-center rounded-lg text-muted transition hover:bg-surface hover:text-ink"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="mb-1 text-xs font-medium text-slate-500">选择分析场景</div>
-          <p className="mb-3 text-xs text-slate-400">
-            场景化 prompt 一键提问 — 每个场景都已经写好上下文
-          </p>
-
-          <div className="space-y-2">
-            {SCENARIOS.map((s) => (
-              <button
-                key={s.id}
-                disabled={busy}
-                onClick={() => run({ scenarioId: s.id })}
-                className={clsx(
-                  "group flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-sm disabled:opacity-50",
-                  scenario === s.id && "ring-2 ring-violet-300",
-                )}
-              >
-                <div
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {/* 场景卡 —— 答完一次自动收起, 顶栏的开关随时叫回来。
+            卡片本身跟着日志族走: access log 一组, 系统日志另一组。 */}
+        {showCards && !busy && (
+          <div className={clsx(resp && "mb-4 border-b border-line pb-4")}>
+            <div className="mb-1 text-xs font-medium text-muted">{t("ai.pickScenario")}</div>
+            <p className="mb-3 text-xs text-muted">
+              {t(family === "system" ? "ai.familySystem" : "ai.familyAccess")}
+            </p>
+            <div className="space-y-2">
+              {scenarios.map((s) => (
+                <button
+                  key={s.id}
+                  disabled={busy}
+                  onClick={() => run({ scenarioId: s.id })}
                   className={clsx(
-                    "flex h-9 w-9 items-center justify-center rounded-lg text-base",
-                    s.color,
+                    "group flex w-full items-center gap-3 rounded-xl border border-line bg-card p-3 text-left transition hover:border-ink/25 disabled:opacity-50",
+                    scenario === s.id && "border-primary",
                   )}
                 >
-                  {s.icon}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-slate-800">{s.title}</span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                      {s.badge}
-                    </span>
+                  <div
+                    className={clsx("grid size-9 shrink-0 place-items-center rounded-lg", s.color)}
+                  >
+                    <s.icon className="size-4" />
                   </div>
-                  <div className="text-xs text-slate-500">{s.desc}</div>
-                </div>
-                <span className="text-slate-300 group-hover:text-slate-500">›</span>
-              </button>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-ink">{t(s.title)}</div>
+                    <div className="truncate text-xs text-muted">{t(s.desc)}</div>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted transition group-hover:text-ink" />
+                </button>
+              ))}
+            </div>
           </div>
+        )}
 
-          {resp && (
-            <div className="mt-5">
-              {resp.blocked ? (
-                <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
-                  <div className="mb-1 font-medium">⚠️ 已被 guardrail 拦截</div>
-                  <div className="text-xs">{resp.block_reason}</div>
+        {/* 提出的问题 —— 像聊天客户端那样贴右, 不用饱和色块 */}
+        {asked && (
+          <p className="mb-4 ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-surface px-3.5 py-2 text-sm">
+            {asked}
+          </p>
+        )}
+
+        {busy && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <Loader2 className="size-4 animate-spin text-primary" />
+            {t("home.analyzing")}…
+          </p>
+        )}
+
+        {resp && !busy && (
+          <div>
+            {/* 链路在答案上方 —— 先看它怎么来的, 再看它说了什么 */}
+            {resp.trace && <AnswerTrace trace={resp.trace} />}
+
+            {resp.blocked ? (
+              <div className="rounded-xl border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-brand-red">
+                <div className="mb-1 flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="size-4" />
+                  {t("ai.blocked")}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-600">
-                      {resp.backend} · {resp.model}
-                    </span>
-                    <span>{resp.citations.length} 处引用</span>
+                <div className="break-all font-mono text-xs">{resp.block_reason}</div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* PII 脱敏提示 — 不阻断但要让用户看见 */}
+                {resp.redacted && (
+                  <div className="rounded-xl border border-brand-orange/30 bg-brand-orange/10 p-3 text-sm text-brand-orange">
+                    <div className="mb-1.5 font-medium">{t("ai.redacted")}</div>
+                    <div className="mb-1.5 flex flex-wrap gap-1">
+                      {(resp.redaction_rules ?? []).map((r) => (
+                        <span
+                          key={r}
+                          className="rounded bg-card/70 px-1.5 py-0.5 font-mono text-[11px]"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                    {resp.redaction_preview && (
+                      <pre className="whitespace-pre-wrap rounded bg-card/70 p-1.5 text-[11px]">
+                        {resp.redaction_preview}
+                      </pre>
+                    )}
                   </div>
+                )}
 
-                  {/* PII 脱敏提示 — 不阻断但要让用户看见 */}
-                  {resp.redacted && (
-                    <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
-                      <div className="mb-1 font-medium">🟡 输入含 PII,已脱敏后再送模型</div>
-                      <div className="mb-1 flex flex-wrap gap-1">
-                        {(resp.redaction_rules ?? []).map((r) => (
-                          <span key={r} className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px]">
-                            {r}
-                          </span>
-                        ))}
-                      </div>
-                      {resp.redaction_preview && (
-                        <pre className="whitespace-pre-wrap rounded bg-white/70 p-1.5 text-[11px]">
-                          {resp.redaction_preview}
-                        </pre>
-                      )}
+                {/* 图表只在场景化提问时出, 而且**哪几张图跟着哪个场景**。
+                    自由提问 (比如"这条 PII 会怎么处理") 和图表无关, 却照样弹出一屏
+                    状态码环图和 TOP 路径 —— 那是噪声, 会把真正的答案挤到屏幕外面。
+                    每个场景铺同一组图也一样: 七个场景看上去会长得一模一样。 */}
+                {job && scenario && <ScenarioCharts job={job} scenario={scenario} />}
+
+                {/* LLM 文字结论 */}
+                <Markdown text={resp.answer} />
+
+                {/* 页脚: 用量 / 引用 / 回放入口 / 复制 —— 读完答案之后才看的东西 */}
+                <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2.5 font-mono text-[11px] text-muted">
+                  <div>
+                    <dt className="inline">{resp.backend}</dt>{" "}
+                    <dd className="inline text-ink">{resp.model}</dd>
+                  </div>
+                  {resp.trace && (
+                    <div>
+                      <dt className="inline">{t("trace.tokens")}</dt>{" "}
+                      <dd className="inline text-ink">
+                        {resp.trace.prompt_tokens + resp.trace.completion_tokens === 0
+                          ? t("trace.unreported")
+                          : `${resp.trace.prompt_tokens} in / ${resp.trace.completion_tokens} out`}
+                      </dd>
                     </div>
                   )}
-
-                  {/* 图表 — 从结构化数据出 (fancy) */}
-                  {job && <ScenarioCharts job={job} />}
-
-                  {/* LLM 文字结论 — markdown 渲染 */}
-                  <div className="rounded-lg border border-slate-200 bg-white p-4">
-                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-indigo-600">
-                      AI 结论
-                    </div>
-                    <Markdown text={resp.answer} />
+                  <div>
+                    <dd className="inline text-ink">{resp.citations.length}</dd>{" "}
+                    <dt className="inline">{t("ai.citations")}</dt>
                   </div>
-
-                  {resp.citations.length > 0 && (
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
-                        查看引用的原始日志片段
-                      </summary>
-                      <ul className="mt-2 space-y-2">
-                        {resp.citations.map((c) => (
-                          <li
-                            key={c.chunk_id}
-                            className="rounded border border-slate-200 bg-white p-2 text-slate-600"
-                          >
-                            <div className="text-slate-400">
-                              chunk_idx={c.chunk_idx} · lines {c.line_start}-
-                              {c.line_end} · score {c.score.toFixed(2)}
-                            </div>
-                            <pre className="mt-1 whitespace-pre-wrap break-all">
-                              {c.excerpt}
-                            </pre>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                  <span className="flex-1" />
+                  {/* 去厂商控制台看这一次调用。
+                      不在这里复刻 Portkey 的日志表 —— 它的每请求读接口不可用 (导出流程
+                      start 返回 500), 复刻出来只会是个残缺版本。给 trace id + 一个链接,
+                      点过去看到的是完整的护栏裁定、metadata、原始请求与响应。 */}
+                  {resp.trace?.console_url && resp.trace.trace_id && (
+                    <a
+                      href={resp.trace.console_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={resp.trace.trace_id}
+                      className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 transition hover:text-ink"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      {t("ai.inConsole")}
+                    </a>
                   )}
-                </div>
-              )}
-            </div>
-          )}
-          {err && (
-            <div className="mt-4 rounded bg-rose-50 p-3 text-sm text-rose-700 ring-1 ring-rose-200">
-              {err}
-            </div>
-          )}
+                  {resp.trace && (
+                    <button
+                      type="button"
+                      onClick={onOpenReplay}
+                      className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 transition hover:text-ink"
+                    >
+                      <Waypoints className="size-3.5" />
+                      {t("ai.replay")}
+                    </button>
+                  )}
+                  <Copy text={resp.answer} label={t("ai.copy")} />
+                </dl>
+
+                {resp.citations.length > 0 && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted transition hover:text-ink">
+                      {t("ai.citationsToggle")}
+                    </summary>
+                    <ul className="mt-2 space-y-2">
+                      {resp.citations.map((c) => (
+                        <li
+                          key={c.chunk_id}
+                          className="rounded-lg border border-line bg-card p-2 text-muted"
+                        >
+                          <div className="font-mono text-[10px] text-muted">
+                            chunk_idx={c.chunk_idx} · lines {c.line_start}-{c.line_end} · score{" "}
+                            {c.score.toFixed(2)}
+                          </div>
+                          <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px]">
+                            {c.excerpt}
+                          </pre>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {err && (
+          <div className="mt-4 rounded-xl border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-brand-red">
+            {err}
+          </div>
+        )}
+      </div>
+
+      <footer className="shrink-0 border-t border-line px-5 py-3">
+        <div className="flex items-end gap-2 rounded-2xl border border-line bg-bg p-2 transition focus-within:border-primary">
+          <textarea
+            rows={1}
+            className="max-h-28 min-h-[24px] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none placeholder:text-muted/60"
+            placeholder={t("ai.placeholder")}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter 发送, Shift+Enter 换行 —— 和所有聊天框一样的手感
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void run({});
+              }
+            }}
+            disabled={busy}
+          />
+          <button
+            onClick={() => run({})}
+            disabled={busy || !question.trim()}
+            aria-label={t("ai.send")}
+            title={t("ai.send")}
+            className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-white transition hover:brightness-95 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+          </button>
         </div>
-
-        <footer className="border-t border-slate-200 px-5 py-3">
-          <div className="flex gap-2">
-            <input
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
-              placeholder="输入问题..."
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && run({})}
-              disabled={busy}
-            />
-            <button
-              onClick={() => run({})}
-              disabled={busy}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-            >
-              {busy ? "…" : "提问"}
-            </button>
-          </div>
-          <div className="mt-1 text-[10px] text-slate-400">
-            走 Envoy AI Gateway · 模型 = {backend} · 注入/越权请求会被拦截
-          </div>
-        </footer>
-      </aside>
-    </>
+      </footer>
+    </aside>
   );
 }
 
-// 注: 顶部用 <></> 包裹仅为保持单一返回; backdrop 已移除以实现并排不遮挡
+function Copy({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setDone(true);
+        setTimeout(() => setDone(false), 1200);
+      }}
+      className="grid size-6 place-items-center rounded-lg text-muted transition hover:text-ink"
+    >
+      {done ? <Check className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </button>
+  );
+}

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE, sessionSecret, verify } from "@/lib/session";
 
-// 简单密码门 — 未带 demo_auth cookie 一律重定向到 /login。
-// cookie 由 /auth/login 校验密码后设置 (httpOnly)。
+// 访问码门 —— 没有有效会话 cookie 一律重定向到 /login。
+//
+// 现在验的是签名和过期时间, 不再是"cookie 存在就放行"。原来的 `demo_auth=1`
+// 在 devtools 里敲一行就能伪造, 那道门形同虚设; 见 lib/session.ts。
 
 const PUBLIC_PREFIXES = ["/login", "/auth/login"];
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (
@@ -17,8 +20,8 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const auth = req.cookies.get("demo_auth");
-  if (!auth?.value) {
+  const ok = await verify(req.cookies.get(SESSION_COOKIE)?.value, sessionSecret());
+  if (!ok) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
