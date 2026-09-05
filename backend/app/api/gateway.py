@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -299,6 +300,21 @@ _PORTKEY_ANALYTICS = "https://api.portkey.ai/v1/analytics"
 
 _WINDOWS: dict[str, int] = {"24h": 1, "7d": 7, "30d": 30}
 
+# 分析结果的短缓存 —— {window: (到期时间戳, 结果)}。
+#
+# 为什么要缓存: 这个端点一次要向 Portkey 打 10 个请求 (7 条曲线 + 3 个分组), 并行下来
+# 冷调用 ~2.2s。而"模型与用量"那页每次打开都会重新问一遍, 于是每次进去都先盯着
+# 一排空骨架等两秒。
+#
+# 为什么 60 秒是安全的: 这里展示的是 24h/7d/30d 的聚合量, 一分钟内的变化在这个尺度上
+# 看不出来。演示时刚问完一个问题想立刻看到它计入用量的话, 切一下时间窗即可 (不同 window
+# 是不同缓存键), 或者等下一分钟。
+#
+# 进程内字典就够了: 单副本部署, 且缓存丢了只是回到现在这个速度, 不影响正确性 ——
+# 不值得为它引入 redis (CLAUDE.md 里也明确不让加)。
+_ANALYTICS_TTL_S = 60.0
+_analytics_cache: dict[str, tuple[float, dict]] = {}
+
 
 async def _portkey_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
     """取一个分析端点; 失败返回空 dict 而不是抛 —— 看板缺一条线, 不该让整页 500。"""
@@ -329,6 +345,10 @@ async def gateway_analytics(window: str = "24h") -> dict:
     """
     if not settings.portkey_api_key:
         return {"configured": False, "window": window}
+
+    hit = _analytics_cache.get(window)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
 
     days = _WINDOWS.get(window, 1)
     end = datetime.now(UTC)
@@ -370,7 +390,7 @@ async def gateway_analytics(window: str = "24h") -> dict:
         if d.get("status_code") is not None
     }
 
-    return {
+    payload = {
         "configured": True,
         "window": window,
         "since": start.isoformat(),
@@ -410,3 +430,7 @@ async def gateway_analytics(window: str = "24h") -> dict:
             "other": sum(v for k, v in by_code.items() if k not in (200, 246, 446)),
         },
     }
+
+    # 存一份, 下次同一时间窗直接返回 (见 _ANALYTICS_TTL_S 处的说明)
+    _analytics_cache[window] = (time.monotonic() + _ANALYTICS_TTL_S, payload)
+    return payload

@@ -347,6 +347,8 @@ export function ReplayFlow({
       edges={edges(trace.backend, trace.provider)}
       frames={frames}
       resetKey={trace}
+      // 回放页给了整屏高度 —— 图在剩余空间里居中, 别钉在顶上
+      fill
       header={
         <div className="flex flex-wrap items-center gap-3">
           {/* 数据来源 —— 真实请求 vs 演示剧本, 这个标签不给关 */}

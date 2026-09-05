@@ -133,6 +133,8 @@ export type Job = {
   sample_entries?: ParsedLogEntry[] | null;
   /** 日志族 —— 决定 AI 助手显示哪一组场景卡。后端按解析结果判定。 */
   log_family?: LogFamily;
+  /** 系统日志里出现过的服务/进程数。access 族为 0。 */
+  distinct_processes?: number;
   error?: string | null;
   created_at: string;
   finished_at?: string | null;
@@ -201,8 +203,14 @@ export async function getJob(id: string) {
   return _fetch<Job>(`/logs/jobs/${id}`);
 }
 
+// 客户端回退路径 —— 和 SSR 预取取同一份数据 (最近一次完成的分析), 同样只取 1 条。
+// 拉 10 条完整 job 只为挑 1 条, 传输量是需要量的 10 倍 (每个 job 带 1000 条明细)。
+//
+// 先要 done 的; 一条都没有时 (刚上传、还在分析) 再取最近一条, 让页面能显示"分析中"
+// 而不是"暂无数据"。第二次请求只在确实没有完成分析时才发生。
 export async function listJobs() {
-  return _fetch<Job[]>(`/logs?limit=10`);
+  const done = await _fetch<Job[]>(`/logs?limit=1&status=done`);
+  return done.length > 0 ? done : await _fetch<Job[]>(`/logs?limit=1`);
 }
 
 export async function chat(args: {

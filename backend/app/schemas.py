@@ -148,6 +148,12 @@ class JobResponse(BaseModel):
     # access log 的场景 (状态码/TOP 路径/UA/URL 注入) 问到 syslog 上会全部落空,
     # 七个场景于是塌成同一句"这不是 access log"。族要跟着数据走, 不能写死。
     log_family: LogFamily = "access"
+    # 系统日志里出现过的服务/进程数 (sshd、su、cron、logrotate…)。access 族恒为 0。
+    #
+    # 放在这里而不是 analysis.traffic 里, 和 log_family 一样在**读取时**从
+    # sample_entries 派生 —— 写进 analysis 的话只有以后新分析的 job 才有这个数,
+    # 库里已有的 job 会显示 0, 那就成了另一张假卡片。
+    distinct_processes: int = 0
 
 
 # ===== Chat =====

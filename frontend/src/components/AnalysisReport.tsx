@@ -144,9 +144,12 @@ function EventCard({ e }: { e: SecurityEvent }) {
 export function AnalysisReport({
   a,
   family = "access",
+  processes = 0,
 }: {
   a: LogAnalysis;
   family?: LogFamily;
+  /** 系统日志里出现过的服务/进程数 —— 由 job 带下来, 不在 analysis 里。 */
+  processes?: number;
 }) {
   const { t } = useI18n();
   const stat = a.traffic;
@@ -186,8 +189,16 @@ export function AnalysisReport({
         {family === "system" ? (
           <>
             <Stat label={t("report.totalLines")} v={stat.total_requests} />
-            <Stat label={t("report.warnLevel")} v={stat.error_4xx} cls="text-brand-orange" />
             <Stat label={t("report.errorLevel")} v={stat.error_5xx} cls="text-brand-red" />
+            {/* 第 4 格给"警告级"还是"涉及服务", 取决于这份日志里哪个是真数字。
+                syslog 解析出的 level 只有 error/info/notice, warn 恒为 0 —— 那一格
+                就成了摆设; apache error_log 才真有 warn。所以有 warn 就显示 warn,
+                没有就显示进程数, 而不是固定占一格空。 */}
+            {stat.error_4xx > 0 ? (
+              <Stat label={t("report.warnLevel")} v={stat.error_4xx} cls="text-brand-orange" />
+            ) : (
+              <Stat label={t("report.processes")} v={processes} />
+            )}
             <Stat label={t("report.uniqueHosts")} v={stat.unique_client_ips} />
           </>
         ) : (

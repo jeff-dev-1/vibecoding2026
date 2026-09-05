@@ -91,9 +91,22 @@ def _aggregate_error(entries: list[ParsedLogEntry]) -> tuple[TrafficStat, list[T
 
     stat = TrafficStat(
         total_requests=total,
-        error_4xx=n_warn,   # 复用字段: warn 计数
+        error_4xx=n_warn,   # 复用字段: warn 计数 (syslog 恒为 0, apache error_log 才有)
         error_5xx=n_error,  # 复用字段: error+ 计数
         unique_client_ips=len(ips),
         top_paths=[p.url_path for p in patterns[:10]],
     )
     return stat, patterns
+
+
+def distinct_processes(entries: list[ParsedLogEntry]) -> int:
+    """系统日志里出现过的服务/进程数。
+
+    _parse_syslog 把 message 存成 "proc: 正文", _norm_msg 取冒号前那段 ——
+    所以这里数的就是进程名。access 日志没有 message, 自然是 0。
+
+    这个数存在的理由: "警告级"那张卡片对 syslog 恒为 0 (解析出的 level 只有
+    error/info/notice, 没有 warn), 摆在报告顶上等于白占一格。进程数是同一份
+    数据里真实存在、且一定非零的维度, 用它换掉那一格。
+    """
+    return len({_norm_msg(e.message) for e in entries if e.message})

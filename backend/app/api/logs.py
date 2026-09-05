@@ -10,8 +10,16 @@ from sqlalchemy import text
 from ..agents.analyzer import index_and_analyze
 from ..config import settings
 from ..db import SessionLocal
-from ..schemas import EvidenceItem, JobResponse, LogAnalysis, ParsedLogEntry, UploadResponse
+from ..schemas import (
+    EvidenceItem,
+    JobResponse,
+    JobStatus,
+    LogAnalysis,
+    ParsedLogEntry,
+    UploadResponse,
+)
 from ..services.log_parser import dominant_family, parse_entries
+from ..services.traffic import distinct_processes
 
 router = APIRouter()
 
@@ -89,6 +97,7 @@ def _row_to_job(r: Any) -> JobResponse:
         analysis=analysis_obj,
         sample_entries=sample_entries,
         log_family=dominant_family(sample_entries or []),
+        distinct_processes=distinct_processes(sample_entries or []),
         error=r.error,
         created_at=r.created_at,
         finished_at=r.finished_at,
@@ -117,13 +126,27 @@ async def get_job(job_id: UUID) -> JobResponse:
 
 
 @router.get("", response_model=list[JobResponse])
-async def list_recent(limit: int = 10) -> list[JobResponse]:
+async def list_recent(limit: int = 10, status: JobStatus | None = None) -> list[JobResponse]:
+    """最近的分析任务。
+
+    status 过滤是为首屏加的。首页只要"最近一次完成的分析"这一个 job, 但原来的做法是
+    拉 10 个完整 job 再在内存里挑一个 —— 每个 job 带着 1000 条 sample_entries,
+    一次 2.6 MB, 其中 9 个直接扔掉。加上这个过滤后 `?limit=1&status=done`
+    只传该传的那一份。
+    """
     limit = max(1, min(50, limit))
+    where = "WHERE status = :st " if status else ""
+    params: dict[str, object] = {"lim": limit}
+    if status:
+        params["st"] = status
     async with SessionLocal() as s:
         rows = (
             await s.execute(
-                text(_BASE_SELECT + "FROM analysis_jobs ORDER BY created_at DESC LIMIT :lim"),
-                {"lim": limit},
+                text(
+                    _BASE_SELECT
+                    + f"FROM analysis_jobs {where}ORDER BY created_at DESC LIMIT :lim"
+                ),
+                params,
             )
         ).all()
     return [_row_to_job(r) for r in rows]

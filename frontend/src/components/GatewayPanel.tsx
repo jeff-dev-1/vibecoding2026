@@ -309,8 +309,12 @@ export function PromptsView() {
 
         {/* 正文 */}
         {current && (
-          <article className="min-w-0 rounded-xl border border-line">
-            <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+          // 目录有 16 条, 正文框被 grid 拉到和目录一样高 (~765px), 而里面的 pre
+          // 卡在 max-h-[440px] —— 于是框底下有 300 多 px 是任何内容都填不到的死区。
+          // 改成 flex 列 + pre 撑满剩余高度: 框有多高, 可读区就有多高, 长提示词也
+          // 在框内滚, 而不是在框中间截断后留一段空白。
+          <article className="flex min-w-0 flex-col rounded-xl border border-line">
+            <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5">
               <span className="text-sm font-semibold text-ink">
                 {current.label || current.title || current.id}
               </span>
@@ -318,7 +322,7 @@ export function PromptsView() {
               <span className="flex-1" />
               <CopyBtn text={current.content} />
             </header>
-            <pre className="max-h-[440px] overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-relaxed text-ink">
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-relaxed text-ink">
               {current.content}
             </pre>
           </article>

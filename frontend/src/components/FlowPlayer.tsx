@@ -136,6 +136,7 @@ export function FlowPlayer({
   /** 换一批帧时从头播。调用方给一个随数据变化的值 (例如 trace 对象)。 */
   resetKey,
   minWidth = 720,
+  fill = false,
 }: {
   width: number;
   height: number;
@@ -146,6 +147,14 @@ export function FlowPlayer({
   header?: React.ReactNode;
   resetKey?: unknown;
   minWidth?: number;
+  /**
+   * 父容器给了整屏高度 (回放页) 时置 true —— 图在多出来的高度里垂直居中。
+   *
+   * 不居中的话, 图钉在顶上, 播放条钉在底上, 中间空出一大片 —— 图看着像浮在页面
+   * 上半截。而供应链页的容器是按内容高的, 那里没有多余高度, 居中反而会把说明卡
+   * 从图的顶边推下去。所以这件事必须由调用方说了算, 不能靠 CSS 猜。
+   */
+  fill?: boolean;
 }) {
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -196,7 +205,12 @@ export function FlowPlayer({
           外层不横向滚 —— 之前图 + 卡片总宽超过容器时, 卡片就被裁在右边缘外面 (只剩标签,
           值看不见)。现在只让**图**自己横向滚, 卡片始终留在可视范围内; 窄容器下卡片
           换行到图下方, 也不会被切。 */}
-      <div className="flex min-h-0 flex-1 flex-wrap items-start gap-4 xl:flex-nowrap">
+      <div
+        className={clsx(
+          "flex min-h-0 flex-1 flex-wrap gap-4 xl:flex-nowrap",
+          fill ? "items-center" : "items-start",
+        )}
+      >
         {/* 图自己一个横向滚动容器 —— 窄屏时滚它, 而不是把右边的说明卡挤出视野。 */}
         <div className="min-w-0 flex-1 overflow-x-auto">
           {/* maxWidth 卡在图的自然尺寸上: 不封顶的话, 容器一宽这个盒子就按宽高比一起拉高,

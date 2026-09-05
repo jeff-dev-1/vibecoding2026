@@ -27,22 +27,33 @@ const WINDOWS: { id: string; labelKey: Key }[] = [
   { id: "30d", labelKey: "usage.w30d" },
 ];
 
+// 跨挂载保留的最近一次结果 (按时间窗)。只是显示层的缓存 —— 权威数据仍在
+// Portkey, 后端也有 60s 缓存; 这一层解决的是"面板重挂就空白"。
+const _lastAnalytics: Record<string, Analytics> = {};
+
 export function UsagePanel({ provider }: { provider: string }) {
   const { t, lang } = useI18n();
   const [win, setWin] = useState("24h");
-  const [data, setData] = useState<Analytics | null>(null);
+  // 上一次拿到的数据当初值 —— 控制面是个浮层, 一关一开这个组件就重挂,
+  // state 清空后又要盯着一排空骨架等接口回来。数字本身几分钟内不会变,
+  // 先把上次的显示出来, 后台再刷新。
+  const [data, setData] = useState<Analytics | null>(() => _lastAnalytics[win] ?? null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let stale = false;
     setLoading(true);
+    // 换时间窗时先把该窗上次的数据顶上去, 没有才留着当前这份
+    const cached = _lastAnalytics[win];
+    if (cached) setData(cached);
     gatewayAnalytics(win)
       .then((d) => {
+        _lastAnalytics[win] = d;
         if (!stale) setData(d);
       })
-      .catch(() => {
-        if (!stale) setData(null);
-      })
+      // 刷新失败时保留已显示的数字, 不要清空 —— 一次网络抖动把看板清成骨架,
+      // 比显示一份几十秒前的数字糟得多。
+      .catch(() => {})
       .finally(() => {
         if (!stale) setLoading(false);
       });
