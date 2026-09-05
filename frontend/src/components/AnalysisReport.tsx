@@ -3,7 +3,7 @@
 import { BarChart3, FileText, KeyRound, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
-import type { LogAnalysis, SecurityEvent } from "@/lib/api";
+import type { LogAnalysis, LogFamily, SecurityEvent } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 // 对应 dottxt STRESSED 输出结构, 用 controller-frontend 的设计语言渲染:
@@ -141,7 +141,13 @@ function EventCard({ e }: { e: SecurityEvent }) {
   );
 }
 
-export function AnalysisReport({ a }: { a: LogAnalysis }) {
+export function AnalysisReport({
+  a,
+  family = "access",
+}: {
+  a: LogAnalysis;
+  family?: LogFamily;
+}) {
   const { t } = useI18n();
   const stat = a.traffic;
   return (
@@ -171,12 +177,27 @@ export function AnalysisReport({ a }: { a: LogAnalysis }) {
         )}
       </div>
 
-      {/* traffic 统计快照 */}
+      {/* traffic 统计快照。
+          后端的 TrafficStat 对两族日志复用同一组字段 (system 族里 error_4xx 装的是
+          warn 数, error_5xx 装的是 error 级数)。数字是对的, 但标签不能照抄字段名 ——
+          一份 sshd 认证日志里根本没有 HTTP, 顶上却写着 "5XX 492", 那是把认证失败数
+          当成 HTTP 错误报出去了, 比不显示更糟。字段可以复用, 标签必须跟着日志族走。 */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label={t("report.totalRequests")} v={stat.total_requests} />
-        <Stat label="4xx" v={stat.error_4xx} cls="text-brand-orange" />
-        <Stat label="5xx" v={stat.error_5xx} cls="text-brand-red" />
-        <Stat label={t("report.uniqueIps")} v={stat.unique_client_ips} />
+        {family === "system" ? (
+          <>
+            <Stat label={t("report.totalLines")} v={stat.total_requests} />
+            <Stat label={t("report.warnLevel")} v={stat.error_4xx} cls="text-brand-orange" />
+            <Stat label={t("report.errorLevel")} v={stat.error_5xx} cls="text-brand-red" />
+            <Stat label={t("report.uniqueHosts")} v={stat.unique_client_ips} />
+          </>
+        ) : (
+          <>
+            <Stat label={t("report.totalRequests")} v={stat.total_requests} />
+            <Stat label="4xx" v={stat.error_4xx} cls="text-brand-orange" />
+            <Stat label="5xx" v={stat.error_5xx} cls="text-brand-red" />
+            <Stat label={t("report.uniqueIps")} v={stat.unique_client_ips} />
+          </>
+        )}
       </div>
 
       {/* ② Key Observations */}

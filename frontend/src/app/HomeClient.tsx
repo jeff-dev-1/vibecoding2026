@@ -140,7 +140,7 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
                     {t("home.deepDive")} →
                   </button>
                 </div>
-                <AnalysisReport a={job.analysis} />
+                <AnalysisReport a={job.analysis} family={job.log_family} />
               </section>
             )}
 
