@@ -9,6 +9,7 @@ CLAUDE.md 硬规则: 其他模块禁止 `from openai import ...`/`from anthropic
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass
@@ -134,6 +135,44 @@ class GatewayError(RuntimeError):
         self.guardrail = guardrail
 
 
+# 连不上上游时重试一次, 然后归一化成 GatewayError。
+#
+# 起因是一次现场 500: 到 api.portkey.ai 的连接偶发 ConnectError (出网走的是
+# 198.18.0.x 那层 NAT/代理), httpx 的异常直接冒到 FastAPI, 界面上就是一句
+# 光秃秃的 "500 — Internal Server Error"。两个问题各修各的:
+#
+#   1. 偶发抖动本不该让人看到错误 —— 隔 0.6s 重试一次, 大多数情况下第二次就通了。
+#   2. 真连不上时也要说人话 —— 转成 GatewayError(502), 让 chat.py 已有的处理接住,
+#      而不是抛一个没人处理的异常。演示时"网关连不上"和"代码崩了"是两件事,
+#      界面上必须区分得出来。
+#
+# 只重试连接类错误 (ConnectError / ConnectTimeout / ReadTimeout 之前的建连阶段)。
+# 已经把请求发出去的失败不重试 —— 那可能已经在上游产生了一次计费调用。
+_RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError)
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    provider: str,
+) -> httpx.Response:
+    last: Exception | None = None
+    for attempt in range(2):
+        try:
+            return await client.post(url, json=payload, headers=headers)
+        except _RETRYABLE as e:
+            last = e
+            if attempt == 0:
+                await asyncio.sleep(0.6)
+    raise GatewayError(
+        status=502,
+        body=f"cannot reach {provider} gateway at {url}: {type(last).__name__}",
+        guardrail=None,
+    ) from last
+
+
 async def chat(
     messages: list[dict[str, str]],
     *,
@@ -164,7 +203,7 @@ async def chat(
     t0 = time.monotonic()
     with tracer.start_as_current_span("llm.chat"):
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await _post_with_retry(client, url, payload, headers, active)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     # 两个网关表达"护栏拦下了"的方式不同, 在这里归一化成一个 guardrail 标记:

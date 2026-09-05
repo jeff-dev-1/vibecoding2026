@@ -102,7 +102,10 @@ async def query(req: ChatRequest) -> ChatResponse:
                     provider=req.provider or settings.gateway_provider,
                 ),
             )
-        raise HTTPException(502, f"upstream error: {e.status}") from e
+        # 把上游的实际情况带出去。原来只回 "upstream error: 502", 前端照原样贴到
+        # 气泡里就是一句没有信息量的话 —— 演示时看到它, 分不清是网关连不上、
+        # 厂商 key 过期, 还是我们自己的代码崩了。e.body 是网关/厂商的原文, 直接给。
+        raise HTTPException(502, f"upstream {e.status}: {e.body[:300]}") from e
 
     citations = [
         Citation(
