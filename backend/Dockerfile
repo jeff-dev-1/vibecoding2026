@@ -27,7 +27,8 @@ RUN pip install --no-cache-dir \
       "opentelemetry-exporter-otlp==1.28.*" \
       "ruff==0.7.*" \
       "pytest==8.3.*" \
-      "pytest-asyncio==0.24.*"
+      "pytest-asyncio==0.24.*" \
+      "pytest-cov==6.0.*"
 
 COPY app ./app
 COPY tests ./tests

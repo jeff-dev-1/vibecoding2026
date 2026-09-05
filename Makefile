@@ -17,7 +17,7 @@ help:
 	@echo "  make logs           跟踪所有服务日志"
 	@echo "  make seed           注入示例日志数据"
 	@echo ""
-	@echo "  make test           跑后端 pytest + 前端 vitest"
+	@echo "  make test           ruff + 后端 pytest + 分层覆盖率闸门 + 前端 vitest"
 	@echo "  make redteam        Promptfoo 红队 (测 LLM 行为)"
 	@echo "  make pentest        渗透测试 DAST: ZAP + Nuclei 扫运行时 Web 面 (无 docker 走 builtin 兜底)"
 	@echo "  make supply-scan    扫本项目依赖+工具的供应链风险 (Koi 门禁; BLOCK/未审批中风险 → 非0退出)"
@@ -60,7 +60,9 @@ seed:
 	bash scripts/seed-logs.sh
 
 test:
-	cd backend && python -m pytest -q
+	cd backend && ruff check .
+	cd backend && python -m pytest -q --cov=app --cov-report=json:.coverage.json --cov-report=term:skip-covered
+	python3 scripts/check-coverage.py backend/.coverage.json
 	cd frontend && pnpm test --run 2>/dev/null || echo "frontend tests skipped (pnpm not installed)"
 
 redteam:

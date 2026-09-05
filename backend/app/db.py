@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from .config import settings
 
-engine = create_async_engine(settings.database_url, pool_pre_ping=True, future=True)
+# DB_NULLPOOL=1 时不做连接池 —— 只给测试用。
+#
+# 连接池会把 asyncpg 连接连同它诞生时的事件循环一起缓存, 而 pytest 每个用例一个新
+# 循环: 第二个用例拿到上一个循环里的连接, 报 "attached to a different loop"。
+# 生产是单循环长驻, 池子照常用 —— 所以这个开关只在测试里打开, 不影响运行时。
+_pool_kw = {"poolclass": NullPool} if os.environ.get("DB_NULLPOOL") == "1" else {}
+engine = create_async_engine(
+    settings.database_url, pool_pre_ping=True, future=True, **_pool_kw
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

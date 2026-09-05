@@ -69,6 +69,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: alad-backend
+    volumes:
+      # 测试要按这一份 schema 建测试库 (tests/conftest.py)。挂载而不是 COPY 进镜像:
+      # 构建上下文是 ./backend, 够不到 ../infra; 而复制一份到 backend/ 下会和真实
+      # 的表结构悄悄长歪。挂载让两边永远是同一个文件。
+      - ./infra/postgres/init.sql:/app/infra/postgres/init.sql:ro
     depends_on:
       postgres:
         condition: service_healthy

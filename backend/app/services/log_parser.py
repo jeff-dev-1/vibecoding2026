@@ -135,7 +135,19 @@ def _parse_syslog(line: str, line_no: int) -> ParsedLogEntry | None:
     msg = m["msg"] or ""
     rhost = _RHOST_RE.search(msg)
     low = msg.lower()
-    if any(k in low for k in ("fail", "illegal", "invalid", "denied", "refused", "error")):
+    # syslog 行里没有 priority 字段, 只能按消息文本判级。
+    #
+    # "alert"/"abnormal"/"fatal" 这几个是补上的: 原来的表只认 fail/error 那几个词,
+    # 于是 `logrotate: ALERT exited abnormally with [1]` 被判成 notice ——
+    # 一个守护进程异常退出被算进"通知", 报告顶上的"错误级"就少报了这一类事件。
+    # crit/emerg/panic 一并加上, 它们都是 syslog 的标准严重级词。
+    if any(
+        k in low
+        for k in (
+            "fail", "illegal", "invalid", "denied", "refused", "error",
+            "alert", "abnormal", "fatal", "panic", "crit", "emerg",
+        )
+    ):
         level = "error"
     elif any(k in low for k in ("session opened", "session closed", "accepted")):
         level = "info"
