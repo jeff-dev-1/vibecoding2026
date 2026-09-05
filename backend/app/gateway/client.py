@@ -65,6 +65,7 @@ def _build_request(backend: LLMBackend, provider: str) -> tuple[str, dict[str, s
     """
     if provider == "portkey":
         route = _PORTKEY_ROUTES.get(backend, _PORTKEY_ROUTES["deepseek"])
+        trace_id = f"alad-{uuid4().hex[:16]}"
         headers = {
             "Content-Type": "application/json",
             "x-portkey-api-key": settings.portkey_api_key,
@@ -75,7 +76,7 @@ def _build_request(backend: LLMBackend, provider: str) -> tuple[str, dict[str, s
             "x-portkey-provider": route["provider"] or "openai",
             # trace id 让这次调用能在 Portkey 控制台里被找到 —— 界面上的 trace 和
             # 厂商后台的记录得能对上, 否则"可观测"只是本地自说自话。
-            "x-portkey-trace-id": f"alad-{uuid4().hex[:16]}",
+            "x-portkey-trace-id": trace_id,
             # metadata 用来把这个应用的流量从账号里择出来。同一个 Portkey 账号下还有
             # 别的应用在跑, 不打标签的话看板统计的是整个账号 —— 那个数字对不上任何人。
             "x-portkey-metadata": '{"app":"' + _APP_TAG + '","_user":"' + _APP_TAG + '"}',
@@ -120,6 +121,9 @@ class CompletionResult:
     routing_header: str = ""
     # 这次调用实际走的 provider (envoy | portkey) —— 单请求可覆盖启动默认值。
     provider: str = "envoy"
+    # Portkey 侧的 trace id。界面把它显示出来并给一个控制台深链 —— 我们不复刻厂商的
+    # 日志表 (它的每请求读接口不可用), 但要让人能一步跳过去对账。
+    trace_id: str = ""
 
 
 class GatewayError(RuntimeError):
@@ -201,6 +205,7 @@ async def chat(
         gateway_url=url,
         routing_header=headers.get("X-LLM-Backend", "") or headers.get("x-portkey-config", ""),
         provider=active,
+        trace_id=headers.get("x-portkey-trace-id", ""),
     )
 
 

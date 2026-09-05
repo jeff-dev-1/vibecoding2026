@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Copy as CopyIcon,
+  ExternalLink,
   Gauge,
   Loader2,
   Search,
@@ -310,7 +311,22 @@ export function AiAssistantDrawer({
                     <dt className="inline">{t("ai.citations")}</dt>
                   </div>
                   <span className="flex-1" />
-                  {/* 业务面到管理面的那座桥: 刚才这次提问, 去控制面逐帧看它怎么走的 */}
+                  {/* 去厂商控制台看这一次调用。
+                      不在这里复刻 Portkey 的日志表 —— 它的每请求读接口不可用 (导出流程
+                      start 返回 500), 复刻出来只会是个残缺版本。给 trace id + 一个链接,
+                      点过去看到的是完整的护栏裁定、metadata、原始请求与响应。 */}
+                  {resp.trace?.console_url && resp.trace.trace_id && (
+                    <a
+                      href={resp.trace.console_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={resp.trace.trace_id}
+                      className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 transition hover:text-ink"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      {t("ai.inConsole")}
+                    </a>
+                  )}
                   {resp.trace && (
                     <button
                       type="button"

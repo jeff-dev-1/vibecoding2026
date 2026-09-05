@@ -125,6 +125,8 @@ async def query(req: ChatRequest) -> ChatResponse:
     if result.provider == "portkey":
         gw_detail["x-portkey-config"] = result.routing_header or "(未配置)"
         gw_detail["guardrail"] = "Portkey 托管护栏 (446 = DENY)"
+        if result.trace_id:
+            gw_detail["trace_id"] = result.trace_id
     else:
         gw_detail["X-LLM-Backend"] = result.routing_header or "(unset → default)"
         gw_detail["X-LLM-Purpose"] = "log-analysis"
@@ -188,6 +190,12 @@ async def query(req: ChatRequest) -> ChatResponse:
             backend=req.backend,
             model=result.model,
             provider=result.provider,
+            trace_id=result.trace_id,
+            console_url=(
+                f"https://app.portkey.ai/organisation/{settings.portkey_org_id}/logs"
+                if settings.portkey_org_id and result.provider == "portkey"
+                else ""
+            ),
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
         ),

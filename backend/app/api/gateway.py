@@ -329,12 +329,13 @@ async def gateway_analytics(window: str = "24h") -> dict:
     }
 
     async with httpx.AsyncClient() as client:
-        requests_g, cost_g, latency_g, tokens_g, errors_g, models, codes = await asyncio.gather(
+        requests_g, cost_g, latency_g, tokens_g, errors_g, users_g, models, codes = await asyncio.gather(
             _portkey_get(client, "graphs/requests", params),
             _portkey_get(client, "graphs/cost", params),
             _portkey_get(client, "graphs/latency", params),
             _portkey_get(client, "graphs/tokens", params),
             _portkey_get(client, "graphs/errors", params),
+            _portkey_get(client, "graphs/users", params),
             _portkey_get(client, "groups/model", params),
             _portkey_get(client, "groups/status_code", params),
         )
@@ -362,12 +363,15 @@ async def gateway_analytics(window: str = "24h") -> dict:
             "latency_p50": (latency_g.get("summary") or {}).get("p50", 0),
             "latency_p90": (latency_g.get("summary") or {}).get("p90", 0),
             "errors": (errors_g.get("summary") or {}).get("total", 0),
+            "users": (users_g.get("summary") or {}).get("total", 0),
         },
         "series": {
             "requests": series(requests_g, "total"),
             "cost": series(cost_g, "total"),
             "tokens": series(tokens_g, "total"),
             "latency": series(latency_g, "p50"),
+            "errors": series(errors_g, "total"),
+            "users": series(users_g, "total"),
         },
         "by_model": [
             {"model": d.get("model"), "requests": d.get("requests", 0)}

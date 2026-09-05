@@ -49,6 +49,7 @@ class RagResult:
     routing_header: str = ""
     structured_used: bool = False
     provider: str = "envoy"
+    trace_id: str = ""
 
 
 async def _load_structured(log_id: UUID | None) -> str:
@@ -188,4 +189,5 @@ async def answer(
         routing_header=res.routing_header,
         structured_used=bool(structured),
         provider=res.provider,
+        trace_id=res.trace_id,
     )

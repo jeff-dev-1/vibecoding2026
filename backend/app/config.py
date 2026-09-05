@@ -33,6 +33,8 @@ class Settings:
     portkey_guardrail: str = os.environ.get("PORTKEY_GUARDRAIL", "")
     # virtual key: 上游厂商凭证存在 Portkey 侧, backend 不持有厂商 key
     portkey_virtual_key: str = os.environ.get("PORTKEY_VIRTUAL_KEY", "")
+    # 控制台组织 id —— 只用来拼一个"去 Portkey 看这次调用"的深链, 不是凭证。
+    portkey_org_id: str = os.environ.get("PORTKEY_ORG_ID", "")
 
     # Portkey OSS 是无状态代理 → 那条路径下 backend 需自带 provider key 透传
     # (Envoy 路径下 key 在网关注入, backend 不持有 — 这是两条路径的真实差异)

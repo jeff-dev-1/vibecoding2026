@@ -202,12 +202,12 @@ export function ControlPlane({
               />
             </div>
           ) : (
-            // 内容不足一屏时整体居中, 而不是顶在上面、底下空一大片。
-            // my-auto 在有余量时居中, 内容超高时退回正常流 —— justify-center 会裁掉顶部。
+            // 顶部对齐。之前是垂直居中 (my-auto), 内容不足一屏时上面空一大块 ——
+            // 而这几页现在都有实打实的内容, 居中反而让人以为页面没加载完。
             <div className="flex min-h-full flex-col px-5 py-5">
               <div
                 className={clsx(
-                  "my-auto w-full",
+                  "w-full",
                   // 供应链页里有一张流程图, 和回放一样需要整块宽度; 其余给阅读宽度。
                   section === "supply" ? "min-w-0" : "mx-auto max-w-5xl",
                 )}

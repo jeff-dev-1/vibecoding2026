@@ -156,6 +156,9 @@ export type ChatTrace = {
   backend: LLMBackend;
   model: string;
   provider: string;
+  /** Portkey 侧 trace id + 控制台链接 —— 用来跳过去对账, 我们不复刻它的日志表。 */
+  trace_id?: string;
+  console_url?: string;
   prompt_tokens: number;
   completion_tokens: number;
 };
@@ -434,12 +437,15 @@ export type Analytics = {
     latency_p50: number;
     latency_p90: number;
     errors: number;
+    users: number;
   };
   series: {
     requests: SeriesPoint[];
     cost: SeriesPoint[];
     tokens: SeriesPoint[];
     latency: SeriesPoint[];
+    errors: SeriesPoint[];
+    users: SeriesPoint[];
   };
   by_model: { model: string; requests: number }[];
   /** 护栏裁定分布 —— Portkey 约定: 446 拒绝, 246 标记但放行。 */

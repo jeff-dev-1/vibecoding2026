@@ -191,6 +191,10 @@ class ChatTrace(BaseModel):
     backend: LLMBackend
     model: str
     provider: str = "envoy"
+    # 厂商侧的 trace id + 控制台链接。界面显示它, 让人能一步跳过去对账 ——
+    # 我们不复刻 Portkey 的日志表, 它的每请求读接口不可用 (导出流程 start 返回 500)。
+    trace_id: str = ""
+    console_url: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
 

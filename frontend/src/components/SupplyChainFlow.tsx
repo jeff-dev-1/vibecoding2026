@@ -10,7 +10,7 @@ import {
   ScanLine,
   ShieldCheck,
   Swords,
-  ServerCog,
+  FileCheck,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
@@ -110,7 +110,16 @@ function nodes(mode: Mode): FlowNode[] {
     // 第二道闸: 卡 promote, 不卡 deploy。
     { id: "promote", x: 466, y: 300, label: "promote", icon: ShieldCheck, tone: "gateway", width: 138 },
     { id: "prod", x: 274, y: 300, label: "production", icon: Rocket, tone: "vendor", width: 152 },
-    { id: "audit", x: 110, y: 300, label: "audit", icon: ServerCog, tone: "vendor", width: 122 },
+    // 发布记录, 不是"再扫一遍"。
+    //
+    // 这里原来叫 audit, 对应的是把 Koi 门禁放在部署之后的那版流水线。门禁前移之后
+    // 那个理由就没了。真要讲"门禁只是时点检查、生产会漂移", 正确画法是图外一条**定时**
+    // 旁路 —— 漂移检测是 cron 跑的, 不是每次提交跑一遍的流水线阶段, 画成 deploy 后面
+    // 的一个 stage 是把两种节奏混在一条线上。
+    //
+    // 这个位置真正属于流水线本次运行的, 是发布记录: 发的是哪个 digest、哪个 commit、
+    // 过了哪几道闸、扫描报告存档在哪 —— 受监管客户被审计时要拿出来的就是这个。
+    { id: "record", x: 110, y: 300, label: "release record", icon: FileCheck, tone: "vendor", width: 168 },
   ];
 }
 
@@ -126,8 +135,8 @@ const EDGES: FlowEdge[] = [
   { id: "redteam-pentest", from: "redteam", to: "pentest" },
   { id: "pentest-promote", from: "pentest", to: "promote" },
   { id: "promote-prod", from: "promote", to: "prod" },
-  // 部署后审计是旁路: 不阻断, 只记录实际落地的是什么。
-  { id: "prod-audit", from: "prod", to: "audit", dashed: true },
+  // 发布记录是旁路: 不阻断, 只把"这次发了什么、过了哪些闸"落成档。
+  { id: "prod-record", from: "prod", to: "record", dashed: true },
 ];
 
 function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
@@ -212,9 +221,13 @@ function buildFrames(mode: Mode, t: (k: any) => string): Frame[] {
       rows: [["deploys", t("sc.prodDeploys")]],
     },
     {
-      key: "audit", title: t("sc.f.audit"), ok: true,
-      nodes: ["prod", "audit"], edges: ["prod-audit"],
-      rows: [["scope", t("sc.auditScope")], ["blocking", t("sc.auditNonBlocking")]],
+      key: "record", title: t("sc.f.record"), ok: true,
+      nodes: ["prod", "record"], edges: ["prod-record"],
+      rows: [
+        ["records", t("sc.recordWhat")],
+        ["why", t("sc.recordWhy")],
+        ["note", t("sc.driftNote")],
+      ],
     },
   );
   return frames;

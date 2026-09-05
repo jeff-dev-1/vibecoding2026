@@ -88,6 +88,7 @@ services:
       PORTKEY_CONFIG: ${PORTKEY_CONFIG:-}
       PORTKEY_GUARDRAIL: ${PORTKEY_GUARDRAIL:-}
       PORTKEY_VIRTUAL_KEY: ${PORTKEY_VIRTUAL_KEY:-}
+      PORTKEY_ORG_ID: ${PORTKEY_ORG_ID:-}
       # 自建 OSS 版的地址 (走 OSS 路径时把 PORTKEY_BASE_URL 指到它)
       PORTKEY_URL: ${PORTKEY_URL:-http://gateway-portkey:8787}
       # portkey 路径下 backend 需自带 provider key 透传 (Envoy 路径不用)

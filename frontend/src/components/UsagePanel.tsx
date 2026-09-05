@@ -124,6 +124,29 @@ export function UsagePanel({ provider }: { provider: string }) {
             />
           </div>
 
+          {/* 第二排: 错误与用户。Portkey 还给了这几条, 单独一排而不是挤进上面四张 ——
+              上排是"用了多少", 这排是"出了多少问题 / 谁在用", 两个问题。 */}
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              label={t("usage.errors")}
+              value={String(data.summary.errors ?? 0)}
+              sub={
+                data.summary.requests
+                  ? `${(((data.summary.errors ?? 0) / data.summary.requests) * 100).toFixed(1)}%`
+                  : "0%"
+              }
+              points={data.series.errors ?? []}
+              lang={lang}
+              tone={(data.summary.errors ?? 0) > 0 ? "danger" : undefined}
+            />
+            <Stat
+              label={t("usage.users")}
+              value={String(data.summary.users ?? 0)}
+              points={data.series.users ?? []}
+              lang={lang}
+            />
+          </div>
+
           <GuardrailVerdicts g={data.guardrail} />
 
           {data.by_model.length > 0 && (
@@ -159,19 +182,24 @@ function Stat({
   sub,
   points,
   lang,
+  tone,
 }: {
   label: string;
   value: string;
   sub?: string;
   points: SeriesPoint[];
   lang: Lang;
+  /** 只有"错误"这类有好坏之分的指标才染色; 其余保持中性, 颜色不用来装饰。 */
+  tone?: "danger";
 }) {
   return (
     <div className="rounded-xl border border-line p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-0.5 font-mono text-xl font-semibold text-ink">{value}</div>
-      {sub && <div className="font-mono text-[10px] text-muted">{sub}</div>}
-      <Sparkline points={points} lang={lang} />
+      {/* 副行始终占位, 哪怕没内容 —— 只有延迟卡有 p90, 不占位的话它的趋势线
+          比另外三张低一行, 四张卡的线就对不齐了。 */}
+      <div className="h-[14px] font-mono text-[10px] text-muted">{sub ?? ""}</div>
+      <Sparkline points={points} lang={lang} tone={tone} />
     </div>
   );
 }
@@ -180,8 +208,17 @@ function Stat({
  * 迷你趋势线。手写 SVG 而不是拉图表库: 一条线 + 一块面积 + 一个悬停点,
  * recharts 在 60px 高的盒子里要处理的坐标轴/边距反而碍事。
  */
-function Sparkline({ points, lang }: { points: SeriesPoint[]; lang: Lang }) {
+function Sparkline({
+  points,
+  lang,
+  tone,
+}: {
+  points: SeriesPoint[];
+  lang: Lang;
+  tone?: "danger";
+}) {
   const c = useTokenColors();
+  const stroke = tone === "danger" ? c.red : c.primary;
   const [hover, setHover] = useState<number | null>(null);
   const vals = points.map((p) => p.v);
   if (vals.length < 2) {
@@ -211,18 +248,18 @@ function Sparkline({ points, lang }: { points: SeriesPoint[]; lang: Lang }) {
       }}
     >
       <svg viewBox={`0 0 ${W} ${H}`} className="h-[46px] w-full" preserveAspectRatio="none">
-        <path d={area} fill={c.primary} opacity={0.14} />
+        <path d={area} fill={stroke} opacity={0.14} />
         <path
           d={`M ${line}`}
           fill="none"
-          stroke={c.primary}
+          stroke={stroke}
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
         {at && (
-          <circle cx={at[0]} cy={at[1]} r={3} fill={c.primary} vectorEffect="non-scaling-stroke" />
+          <circle cx={at[0]} cy={at[1]} r={3} fill={stroke} vectorEffect="non-scaling-stroke" />
         )}
       </svg>
       {hover != null && (
