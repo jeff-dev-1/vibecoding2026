@@ -63,6 +63,8 @@ test:
 	cd backend && ruff check .
 	cd backend && python -m pytest -q --cov=app --cov-report=json:.coverage.json --cov-report=term:skip-covered
 	python3 scripts/check-coverage.py backend/.coverage.json
+	cd frontend && node scripts/check-flow-geometry.mjs
+	cd frontend && node scripts/check-palette.mjs
 	cd frontend && pnpm test --run 2>/dev/null || echo "frontend tests skipped (pnpm not installed)"
 
 redteam:

@@ -45,15 +45,46 @@ const CHART_PLAN: Record<string, ChartKey[]> = {
   "sys-timeline": [],
 };
 
-// 分类色板从 token 出, 不写死十六进制 —— 否则深色模式下这几张图还是浅色那一套。
-const palette = (c: TokenColors) => [c.primary, c.orange, c.blue, c.red, c.green, c.muted, c.ink];
+// 这几张图里其实**没有真正的"分类"数据** —— 状态码、日志级别、严重度全都是
+// *状态*, 有内在次序。按分类色板循环上色是把有序的东西涂成了无序的。
+//
+// 原来的做法是 [primary, orange, blue, red, green, muted, ink] 循环。校验器的结论:
+// 橙↔绿在红绿色盲下 ΔE 7.1 (门槛 8), muted/ink 彩度不足被判为灰,
+// 绿与青对底色只有 2.1:1 —— 对一部分读者那就是几种"差不多的颜色"。
+//
+// 现在按语义映射到一条经过校验的状态色阶 (globals.css 的 --c-chart-*):
+// 越严重越靠前。同一个概念在所有图里是同一个颜色, 而不是"第几个出现"。
+const ramp = (c: TokenColors) => [c.chart1, c.chart2, c.chart3, c.chart4, c.chart5];
 
-// 状态码有约定俗成的语义色: 5xx 红 / 4xx 橙 / 3xx 蓝 / 2xx 绿。
+// 状态码有约定俗成的语义色: 5xx 最重 / 4xx 次之 / 3xx / 2xx 正常。
 function statusColor(code: string, c: TokenColors) {
-  if (code.startsWith("5")) return c.red;
-  if (code.startsWith("4")) return c.orange;
-  if (code.startsWith("3")) return c.blue;
-  return c.green;
+  if (code.startsWith("5")) return c.chart1;
+  if (code.startsWith("4")) return c.chart2;
+  if (code.startsWith("3")) return c.chart3;
+  return c.chart4;
+}
+
+// 日志级别 → 同一条色阶。error 和 5xx 用同一个红不是巧合: 它们是同一件事的
+// 两种记法, 图上就该长一样。
+const LEVEL_RANK: Record<string, number> = {
+  EMERG: 0, ALERT: 0, CRIT: 0, FATAL: 0, ERROR: 0, ERR: 0,
+  WARN: 1, WARNING: 1,
+  NOTICE: 2,
+  INFO: 3, DEBUG: 3,
+};
+
+// 严重度 → 同一条色阶, 顺序即严重程度。
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 0, high: 0,
+  medium: 1,
+  low: 2,
+  info: 3,
+};
+
+function rankedColor(key: string, table: Record<string, number>, c: TokenColors) {
+  const r = table[key] ?? table[key.toUpperCase()] ?? table[key.toLowerCase()];
+  const cols = ramp(c);
+  return cols[r ?? cols.length - 1];   // 认不出来的落到最后一档, 不参与前面的语义
 }
 
 export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }) {
@@ -61,7 +92,6 @@ export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }
   const show = (k: ChartKey) => (plan ? plan.includes(k) : true);
   const { t } = useI18n();
   const c = useTokenColors();
-  const COLORS = palette(c);
   const tip = {
     fontSize: 12,
     borderRadius: 8,
@@ -144,7 +174,9 @@ export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }
                 {statusDist.map((d, i) => (
                   <Cell
                     key={i}
-                    fill={isError ? COLORS[i % COLORS.length] : statusColor(d.name, c)}
+                    fill={
+                      isError ? rankedColor(d.name, LEVEL_RANK, c) : statusColor(d.name, c)
+                    }
                   />
                 ))}
               </Pie>
@@ -167,7 +199,7 @@ export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }
                 stroke={c.muted}
               />
               <Tooltip contentStyle={tip} />
-              <Bar dataKey="hits" fill={c.primary} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="hits" fill={c.chart3} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -186,7 +218,7 @@ export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }
                 stroke={c.muted}
               />
               <Tooltip contentStyle={tip} />
-              <Bar dataKey="value" fill={c.orange} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="value" fill={c.chart2} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -208,7 +240,7 @@ export function ScenarioCharts({ job, scenario }: { job: Job; scenario: string }
                 style={{ fontSize: 10 }}
               >
                 {sevDist.map((d, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  <Cell key={i} fill={rankedColor(d.name, SEVERITY_RANK, c)} />
                 ))}
               </Pie>
               <Tooltip contentStyle={tip} />

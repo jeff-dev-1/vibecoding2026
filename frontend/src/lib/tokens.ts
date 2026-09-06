@@ -25,6 +25,12 @@ export type TokenColors = {
   blue: string;
   orange: string;
   primary: string;
+  /** 图表专用色板 —— 与界面色分开, 见 globals.css 里的说明。顺序不要调换。 */
+  chart1: string;
+  chart2: string;
+  chart3: string;
+  chart4: string;
+  chart5: string;
 };
 
 // SSR 与首帧的兜底值 (浅色)。真值在 effect 里读到后覆盖。
@@ -38,6 +44,11 @@ const FALLBACK: TokenColors = {
   blue: "rgb(0 192 232)",
   orange: "rgb(250 88 45)",
   primary: "rgb(0 204 102)",
+  chart1: "rgb(176 58 30)",
+  chart2: "rgb(176 128 0)",
+  chart3: "rgb(0 131 168)",
+  chart4: "rgb(0 153 77)",
+  chart5: "rgb(123 79 168)",
 };
 
 const NAMES: Record<keyof TokenColors, string> = {
@@ -50,6 +61,11 @@ const NAMES: Record<keyof TokenColors, string> = {
   blue: "--c-blue",
   orange: "--c-orange",
   primary: "--c-primary",
+  chart1: "--c-chart-1",
+  chart2: "--c-chart-2",
+  chart3: "--c-chart-3",
+  chart4: "--c-chart-4",
+  chart5: "--c-chart-5",
 };
 
 function read(): TokenColors {
