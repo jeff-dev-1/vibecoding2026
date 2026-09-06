@@ -60,6 +60,7 @@ seed:
 	bash scripts/seed-logs.sh
 
 test:
+	bash scripts/check-secrets.sh
 	cd backend && ruff check .
 	cd backend && python -m pytest -q --cov=app --cov-report=json:.coverage.json --cov-report=term:skip-covered
 	python3 scripts/check-coverage.py backend/.coverage.json

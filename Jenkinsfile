@@ -1,17 +1,26 @@
 // Vibe Coding Demo — AI Log Analysis Platform
-// 参考 ../milos-adc-ai-agent/Jenkinsfile,适配多 service 部署
-// 构建: backend + frontend 镜像 → push harbor → scp + docker compose up 到 deploy host
+// 适配多 service (backend + frontend) 部署
+// 构建: backend + frontend 镜像 → push registry → rsync + docker compose up 到 deploy host
+// registry / namespace / deploy host 全部来自环境变量与 Jenkins 凭证, 不写死在这里。
 def label = "vibe-coding-demo-build-${UUID.randomUUID().toString()}"
 
 podTemplate(label: label, containers: [
-  containerTemplate(name: 'docker', image: 'harbor.milos.local/mirrors/docker', command: 'cat', ttyEnabled: true, alwaysPullImage: false),
+  containerTemplate(name: 'docker', image: "${env.CI_REGISTRY ?: 'docker.io'}/mirrors/docker", command: 'cat', ttyEnabled: true, alwaysPullImage: false),
   containerTemplate(name: 'tools', image: 'alpine:3.18', command: 'cat', ttyEnabled: true, alwaysPullImage: false),
 ], volumes: [
   hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
 ]) {
   node(label) {
-    def REGISTRY = 'harbor.milos.local'
-    def NAMESPACE = 'milos-lb'
+    // 镜像仓与命名空间从环境变量取。
+    //
+    // 写死内网主机名有两个问题, 一个安全一个实用:
+    //   - 这个仓库是公开的, 写死等于对外公布内部 DNS 命名和 registry 的存在。
+    //     凭证本身没泄露 (下面全走 credentialsId), 但拓扑信息也不必送出去。
+    //   - 学员克隆下来根本连不上我们的内网 registry, 写死让这份流水线只能在
+    //     一个地方跑。参数化之后它是一份能改的模板, 而不是一份要改的样例。
+    // 在 Jenkins 的 Global Properties 或 job 里配 CI_REGISTRY / CI_NAMESPACE。
+    def REGISTRY = env.CI_REGISTRY ?: 'registry.example.com'
+    def NAMESPACE = env.CI_NAMESPACE ?: 'demo'
     def IMAGE_BACKEND = 'vibe-coding-demo-backend'
     def IMAGE_FRONTEND = 'vibe-coding-demo-frontend'
     def DEPLOY_PATH = '/opt/vibe-coding-demo'
@@ -268,7 +277,14 @@ PYEOF
       throw e
     } finally {
       stage('Notify') {
-        step([$class: 'Mailer', notifyEveryUnstableBuild: true, recipients: 'zoujun@imilos.com', sendToIndividuals: true])
+        // 收件人从环境变量取 —— 公开仓里的明文邮箱会被爬虫收走。
+        // 留空时只通知触发构建的人 (sendToIndividuals), 不需要这个变量也能用。
+        step([
+          $class: 'Mailer',
+          notifyEveryUnstableBuild: true,
+          recipients: env.CI_NOTIFY_EMAIL ?: '',
+          sendToIndividuals: true,
+        ])
       }
     }
   }
