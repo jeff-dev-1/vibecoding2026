@@ -199,8 +199,9 @@ export async function uploadLog(file: File, source = "nginx") {
   });
 }
 
-export async function getJob(id: string) {
-  return _fetch<Job>(`/logs/jobs/${id}`);
+// lang 决定报告里散文的语言 (摘要/关键发现/事件描述)。证据字段不翻译。
+export async function getJob(id: string, lang = "zh-Hans") {
+  return _fetch<Job>(`/logs/jobs/${id}?lang=${encodeURIComponent(lang)}`);
 }
 
 // 客户端回退路径 —— 和 SSR 预取取同一份数据 (最近一次完成的分析), 同样只取 1 条。
@@ -208,9 +209,10 @@ export async function getJob(id: string) {
 //
 // 先要 done 的; 一条都没有时 (刚上传、还在分析) 再取最近一条, 让页面能显示"分析中"
 // 而不是"暂无数据"。第二次请求只在确实没有完成分析时才发生。
-export async function listJobs() {
-  const done = await _fetch<Job[]>(`/logs?limit=1&status=done`);
-  return done.length > 0 ? done : await _fetch<Job[]>(`/logs?limit=1`);
+export async function listJobs(lang = "zh-Hans") {
+  const q = `limit=1&lang=${encodeURIComponent(lang)}`;
+  const done = await _fetch<Job[]>(`/logs?${q}&status=done`);
+  return done.length > 0 ? done : await _fetch<Job[]>(`/logs?${q}`);
 }
 
 export async function chat(args: {

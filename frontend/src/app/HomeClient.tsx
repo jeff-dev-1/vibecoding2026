@@ -22,7 +22,7 @@ import { useI18n } from "@/lib/i18n";
 // initialJob: 服务端 (SSR) 预取的最近一次分析。命中时首屏直接带数据, 客户端零往返。
 // 为 null 时 (预取失败/无历史) 回退到客户端 listJobs。
 export function HomeClient({ initialJob }: { initialJob: Job | null }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const notTerminal = (j: Job) => j.status !== "done" && j.status !== "failed";
   const [jobId, setJobId] = useState<string | null>(
     initialJob && notTerminal(initialJob) ? initialJob.id : null,
@@ -49,7 +49,7 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
   // 客户端回退: 仅当 SSR 没拿到数据时才跑 (listJobs 与 getJob 同一 SELECT, 返回完整 job)。
   useEffect(() => {
     if (jobId || job) return;
-    listJobs()
+    listJobs(lang)
       .then((jobs) => {
         const latest = jobs.find((j) => j.status === "done") || jobs[0];
         if (!latest) {
@@ -63,14 +63,14 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
         }
       })
       .catch(() => setInitialLoading(false));
-  }, [jobId, job]);
+  }, [jobId, job, lang]);
 
   useEffect(() => {
     if (!jobId) return;
     let stop = false;
     async function tick() {
       try {
-        const j = await getJob(jobId!);
+        const j = await getJob(jobId!, lang);
         if (stop) return;
         setJob(j);
         setInitialLoading(false); // 拿到 job 数据, 收起骨架
@@ -84,12 +84,29 @@ export function HomeClient({ initialJob }: { initialJob: Job | null }) {
     return () => {
       stop = true;
     };
-  }, [jobId]);
+  }, [jobId, lang]);
 
   async function refresh() {
     const id = jobId ?? job?.id;
-    if (id) setJob(await getJob(id));
+    if (id) setJob(await getJob(id, lang));
   }
+
+  // 切语言时把报告重新取一遍 —— 摘要/关键发现是后端按 lang 翻的, 不重取就还是旧语言。
+  // 只在已有 job 且语言变化时跑; 译文后端有缓存, 切回来是一次命中。
+  useEffect(() => {
+    const id = job?.id;
+    if (!id) return;
+    let stale = false;
+    getJob(id, lang)
+      .then((j) => {
+        if (!stale) setJob(j);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只跟 lang 走, 不跟 job 对象
+  }, [lang]);
 
   const entries = job?.sample_entries ?? [];
 

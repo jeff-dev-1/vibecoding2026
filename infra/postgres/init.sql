@@ -75,3 +75,13 @@ CREATE TABLE IF NOT EXISTS pentest_reports (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS pentest_reports_created_idx ON pentest_reports(created_at DESC);
+
+-- 报告译文缓存 (每份分析每种语言最多翻一次)。
+-- 只缓存散文字段翻译后的整份 analysis; 事实字段与原文一致, 见 services/report_i18n.py。
+CREATE TABLE IF NOT EXISTS analysis_translations (
+  job_id      UUID NOT NULL REFERENCES analysis_jobs(id) ON DELETE CASCADE,
+  lang        TEXT NOT NULL,
+  analysis    JSONB NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (job_id, lang)
+);

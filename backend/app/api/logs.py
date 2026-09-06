@@ -10,6 +10,7 @@ from sqlalchemy import text
 from ..agents.analyzer import index_and_analyze
 from ..config import settings
 from ..db import SessionLocal
+from ..prompts import DEFAULT_ANSWER_LANG, AnswerLang
 from ..schemas import (
     EvidenceItem,
     JobResponse,
@@ -19,6 +20,7 @@ from ..schemas import (
     UploadResponse,
 )
 from ..services.log_parser import dominant_family, parse_entries
+from ..services.report_i18n import translated_analysis
 from ..services.traffic import distinct_processes
 
 router = APIRouter()
@@ -117,7 +119,13 @@ _BASE_SELECT = (
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: UUID) -> JobResponse:
+async def get_job(job_id: UUID, lang: AnswerLang = DEFAULT_ANSWER_LANG) -> JobResponse:
+    """单个分析。
+
+    lang 决定报告里**散文**的语言 (摘要/关键发现/事件描述)。报告本身是上传时生成
+    一次的数据, 不会因为切语言而重新分析 —— 重跑可能得到不同的结论, 同一份日志
+    两次说法不一致比语言不对更糟。只把散文翻过去, 证据 (IP/路径/状态码) 原样保留。
+    """
     async with SessionLocal() as s:
         row = (
             await s.execute(
@@ -127,11 +135,15 @@ async def get_job(job_id: UUID) -> JobResponse:
         ).one_or_none()
     if not row:
         raise HTTPException(404, "job not found")
-    return _row_to_job(row)
+    return await _localize(_row_to_job(row), lang)
 
 
 @router.get("", response_model=list[JobResponse])
-async def list_recent(limit: int = 10, status: JobStatus | None = None) -> list[JobResponse]:
+async def list_recent(
+    limit: int = 10,
+    status: JobStatus | None = None,
+    lang: AnswerLang = DEFAULT_ANSWER_LANG,
+) -> list[JobResponse]:
     """最近的分析任务。
 
     status 过滤是为首屏加的。首页只要"最近一次完成的分析"这一个 job, 但原来的做法是
@@ -154,4 +166,12 @@ async def list_recent(limit: int = 10, status: JobStatus | None = None) -> list[
                 params,
             )
         ).all()
-    return [_row_to_job(r) for r in rows]
+    return [await _localize(_row_to_job(r), lang) for r in rows]
+
+
+async def _localize(job: JobResponse, lang: str) -> JobResponse:
+    """按界面语言翻译报告散文。默认语言直接返回 —— 报告本来就是那个语言生成的。"""
+    if job.analysis is None or lang == DEFAULT_ANSWER_LANG:
+        return job
+    data = await translated_analysis(job.id, job.analysis.model_dump(), lang)
+    return job.model_copy(update={"analysis": LogAnalysis.model_validate(data)})

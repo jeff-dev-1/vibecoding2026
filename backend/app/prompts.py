@@ -203,3 +203,34 @@ def scenario_prompt(scenario_id: str) -> str | None:
         if item:
             return item["prompt"]
     return None
+
+
+# ===== 报告翻译 =====
+#
+# 分析报告是**数据** (上传时生成一次, 存库), 但报告里的散文不是 —— 界面切成
+# English 之后, 摘要和关键发现还是中文, 那是整页最扎眼的一块漏译。
+#
+# 不重跑分析: 重跑既贵又可能得到**不同的结论** (同一份日志, 两次分析说法不一致,
+# 比语言不对更糟)。只翻译散文字段, 事实字段 (IP / 路径 / 状态码 / 严重度 / 计数)
+# 原样保留 —— 它们是证据, 翻译过的证据没法拿去和原始日志对账。
+REPORT_TRANSLATE_PROMPT = (
+    "You translate a log-analysis report into the reader's language. "
+    "Return ONLY a JSON object with exactly the same keys and array lengths as the input.\n\n"
+    "Rules:\n"
+    "- Translate ONLY prose: summary, key_observations, and each event's title/description.\n"
+    "- Do NOT translate evidence: IP addresses, URL paths, user agents, status codes, "
+    "process names (sshd, logrotate), log lines, or field names. Copy them verbatim.\n"
+    "- Keep every list the same length and order; do not add, drop, merge or reorder items.\n"
+    "- Keep numbers exactly as given.\n"
+    "- No prose outside the JSON. No code fences."
+)
+
+_TARGET_LANG_NAME: dict[str, str] = {
+    "zh-Hans": "Simplified Chinese (简体中文)",
+    "zh-Hant": "Traditional Chinese (繁體中文)",
+    "en": "English",
+}
+
+
+def target_language_name(lang: str | None) -> str:
+    return _TARGET_LANG_NAME.get(lang or "", _TARGET_LANG_NAME[DEFAULT_ANSWER_LANG])
